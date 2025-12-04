@@ -75,20 +75,26 @@
 
 ### 2.2 前端模块划分
 
-#### 2.2.1 Toolbar 模块
+#### 2.2.1 Toolbar 模块 (v1.2 重构)
+* UI 布局：
 
-* 功能：
+  * 位置：画布左上角的悬浮面板（BoardMix 风格）。
 
-  * 选择绘制工具：`pen | rect | ellipse`
-  * 选择颜色、线宽
-  * 操作撤销 / 重做
-  * 点击“导出图片”
-* 对外接口：
+  * 一级菜单：竖向排列，包含分类图标（画笔、形状、颜色、撤销、清屏）。
 
-  * Props：`onToolChange(tool)`, `onColorChange`, `onStrokeWidthChange`, `onUndo`, `onRedo`, `onExport`
-* 状态：
+  * 二级菜单 (Popover)：点击“画笔”或“形状”时，向右侧弹出具体样式的选择面板。
 
-  * 当前选中工具 / 颜色 / 线宽（可以由上层统一管理）
+* 功能状态：
+
+  * 画笔类：pencil (铅笔), marker (马克笔), laser (激光笔)。
+
+  * 形状类：rect, ellipse, triangle, star, diamond, pentagon, hexagon, arrow。
+
+* 交互逻辑：
+
+  * 引入 lucide-react 图标库提升视觉体验。
+
+  * 使用 CSS pointer-events 解决悬浮层遮挡画布的问题
 
 #### 2.2.2 CanvasLayer 模块
 
@@ -179,93 +185,41 @@ const y = yNorm * canvasHeight;
 
 > 多人光标和绘制点 **都使用相同的归一化坐标系统**。
 
-### 3.2 自由绘制（Pen Tool）
+### 3.2 自由绘制 (Freehand Tool)
+支持 brushType 属性，包含三种模式：
 
-#### 3.2.1 基本事件流（折线版本 / MVP）
+1. 铅笔 (Pencil)：
 
-1. `pointerdown`：
+   * 默认实心线条，globalAlpha = 1.0。
 
-   * 记录起始点（归一化坐标）
-   * 初始化当前 stroke 的 `points: Point[]`，push 第一个点。
-   * 打开一个 `isDrawing = true` 标记。
-2. `pointermove`（仅在 `isDrawing = true` 时）：
+2. 马克笔 (Marker)：
 
-   * 以一定频率（可选节流）采样当前指针位置，转换为归一化坐标。
-   * `points.push(currentPoint)`。
-   * 在 `previewCanvas` 上基于 `points` 重绘当前 stroke（折线即可）。
-3. `pointerup` / `pointercancel`：
+   * 模拟水彩笔效果，渲染时设置 globalAlpha = 0.5 且线宽加倍，实现笔迹叠加变深的效果。
 
-   * 将 `points` 数组转换成一个完整的 `DrawAction`（类型为 `freehand`）。
-   * 调用 `NetworkMgr.sendDrawAction(action)`。
-   * 清空 `previewCanvas` 的当前 stroke 预览。
-   * 设 `isDrawing = false`。
+3. 激光笔 (Laser)：
 
-#### 3.2.2 贝塞尔曲线平滑（进阶但不难版本）
+  * 短暂存活：笔迹不写入 Main Canvas（持久层），仅在 Preview Canvas（预览层）绘制。
 
-**推荐框架：**
+  * 动画循环：前端维护一个 lasers 队列，利用 requestAnimationFrame 每一帧递减透明度。
 
-* MVP：先实现折线（把 points 直接连线）。
-* 进阶：在前端渲染时，对 `points` 使用简单的 **二次贝塞尔中点法** 进行平滑。
+  * 自动消失：设定生命周期为 2000ms，超时后从队列移除。
 
-**算法步骤（中点法，适合作为课堂项目）：**
+3.3 图形与连接线 (Shapes)
+所有图形统一采用 双点定义法 (start, end)，渲染器根据这两点计算几何路径：
 
-假设已经有原始点序列 `p0, p1, p2, ... pn`（归一化坐标）：
+* 基础图形：矩形、圆/椭圆、三角形。
 
-1. 将归一化坐标反归一化为像素坐标（渲染用）。
-2. Canvas 绘制逻辑：
+* 多边形：
 
-   * `ctx.beginPath();`
-   * `ctx.moveTo(p0.x, p0.y);`
-   * 对 `i` 从 1 到 `n - 1`：
+* 五角星 (Star)：计算外接圆半径，使用三角函数生成 10 个顶点。
 
-     * 计算当前点与下一点的中点：
+* 菱形 (Diamond)、五边形 (Pentagon)、六边形 (Hexagon)：基于外接圆或对角线计算顶点。
 
-       * `const midX = (pi.x + p(i+1).x) / 2;`
-       * `const midY = (pi.y + p(i+1).y) / 2;`
-     * 调用 `ctx.quadraticCurveTo(pi.x, pi.y, midX, midY);`
-3. `ctx.stroke();` 结束。
+* 连接线 (Arrow)：
 
-**实现要点：**
+  * 根据起点和终点计算角度 (Math.atan2)。
 
-* `points` 仍然是原始离散点（不用存贝塞尔控制点）。
-* 平滑只发生在“渲染阶段”，不影响网络传输的数据结构。
-* 若时间不够，可以只在 `pointerup` 后对整条线做一次平滑绘制；在拖动过程中仍用折线预览即可。
-
-### 3.3 图形工具：矩形 / 圆形（预览-确认）
-
-#### 3.3.1 矩形 Rect Tool
-
-1. `pointerdown`：
-
-   * 记录 `startPoint`（归一化）。
-2. `pointermove`：
-
-   * 根据当前指针获取 `endPoint`（归一化）。
-   * 在 `previewCanvas` 上：
-
-     * 根据 `startPoint` 和 `endPoint` 计算实际像素坐标。
-     * 清空 `previewCanvas`。
-     * 绘制一个矩形轮廓（或填充）。
-3. `pointerup`：
-
-   * 使用 `startPoint`, `endPoint` 构造 `DrawAction`（type 为 `rect`）。
-   * 调用 `sendDrawAction` 发送到服务器。
-   * 清空 `previewCanvas`，等待服务器广播后的正式渲染。
-
-#### 3.3.2 圆形 / 椭圆 Ellipse Tool
-
-同上，只是绘制逻辑不同：
-
-* 中心点：
-
-  * `cx = (start.x + end.x) / 2`
-  * `cy = (start.y + end.y) / 2`
-* 半径：
-
-  * `rx = |end.x - start.x| / 2`
-  * `ry = |end.y - start.y| / 2`
-
-在 canvas 中使用 `ctx.ellipse(cx, cy, rx, ry, 0, 0, 2 * Math.PI)` 绘制。
+  * 在终点处反向绘制两条短线段形成箭头头部。
 
 ### 3.4 撤销 / 重做：软删除 vs 动作栈
 
@@ -435,185 +389,115 @@ const sendCursorThrottled = useMemo(
      * `offscreenCanvas.toDataURL()` 后下载。
    * 优点：即使将来有多层 canvas，导出逻辑仍然统一；也可以选择不导出光标。
 
+3.7 多画布支持 (Multi-Page) [v1.2 新增]
+* 数据结构：所有 DrawAction 和用户 Cursor 均增加 pageId 字段 (默认 'page-1')。
+
+* 渲染隔离：
+
+  * 前端渲染循环中增加过滤条件：if (action.pageId === currentPageId) 才进行绘制。
+
+  * 切换页面时，立即清空画布并请求/重绘新页面的数据。
+
+* 清屏逻辑：
+
+  * board:clear 事件必须携带 pageId，后端只标记该页面的动作为删除。
+
 ---
+## 4. 接口与协议设计 (Interface & Protocol v1.2)
+### 4.1 数据结构定义 (TypeScript)
+```TypeScript
+export const PROTOCOL_VERSION = '1.2.0';
 
-## 4. 接口与协议设计 (Interface & Protocol)
+/* --- 基础类型 --- */
+export type RoomId = string;
+export type UserId = string;
+export type ActionId = string;
+export type PageId = string; // 新增：多画布页码 ID
 
-> 本节是文档核心。定义 Socket.io 事件和相关 TypeScript 类型。
-
-### 4.1 WebSocket 事件清单
-
-#### 4.1.1 Client → Server 事件
-
-| Event Name      | Payload JSON 结构                                            | 说明            |
-| --------------- | ---------------------------------------------------------- | ------------- |
-| `room:join`     | `{ roomId: string; userName: string; }`                    | 加入房间          |
-| `room:leave`    | `{ roomId: string; }`                                      | 主动离开房间（可选）    |
-| `draw:commit`   | `{ roomId: string; action: DrawAction; }`                  | 提交一次完整绘制动作    |
-| `action:undo`   | `{ roomId: string; }`                                      | 撤销当前用户最近动作    |
-| `action:redo`   | `{ roomId: string; }`                                      | 重做当前用户最近撤销的动作 |
-| `cursor:update` | `{ roomId: string; position: { x: number; y: number; }; }` | 更新当前用户光标位置    |
-| `user:rename`   | `{ roomId: string; name: string; }`                        | 修改昵称（可选）      |
-
-#### 4.1.2 Server → Client 事件
-
-| Event Name              | Payload JSON 结构                                                                        | 说明              |
-| ----------------------- | -------------------------------------------------------------------------------------- | --------------- |
-| `room:joined`           | `{ roomId: string; self: User; state: RoomState; }`                                    | 成功加入房间，返回当前房间状态 |
-| `room:join:error`       | `{ roomId: string; code: string; message: string; }`                                   | 加入失败（房间满员等）     |
-| `room:user-joined`      | `{ roomId: string; user: User; }`                                                      | 有新用户加入          |
-| `room:user-left`        | `{ roomId: string; userId: string; }`                                                  | 有用户离开           |
-| `draw:created`          | `{ roomId: string; action: DrawAction; }`                                              | 新的绘制动作被创建       |
-| `action:updatedDeleted` | `{ roomId: string; actionId: string; isDeleted: boolean; }`                            | 某个动作被标记为软删除/恢复  |
-| `cursor:updated`        | `{ roomId: string; userId: string; position: { x: number; y: number; }; }`             | 某用户光标更新         |
-| `room:state-sync`       | `{ roomId: string; state: RoomState; reason: 'reconnect' \| 'admin' \| 'full-sync'; }` | 触发一次完整房间状态同步    |
-| `error`                 | `{ code: string; message: string; }`                                                   | 通用错误            |
-
-> 实现提示：
->
-> * Socket.io 自带 `connect`, `disconnect` 事件，不必专门定义。
-> * 大部分时候只需使用 `draw:created`, `action:updatedDeleted`, `cursor:updated` 实时更新即可，`room:state-sync` 可以用于重连后全量刷新。
-
-### 4.2 TypeScript 数据结构定义
-
-#### 4.2.1 通用点坐标类型
-
-```ts
 export interface Point {
-  /** 0 ~ 1 之间的归一化坐标 */
   x: number;
   y: number;
 }
-```
 
-#### 4.2.2 DrawAction
+/* --- 绘制动作 DrawAction --- */
+export type DrawActionType = 
+  | 'freehand' // 自由画笔
+  | 'rect' | 'ellipse' | 'triangle' | 'star' 
+  | 'diamond' | 'pentagon' | 'hexagon' // v1.2 新增形状
+  | 'arrow';   // v1.2 新增箭头
 
-```ts
-export type DrawActionType = 'freehand' | 'rect' | 'ellipse';
+export type BrushType = 'pencil' | 'marker' | 'laser'; // v1.2 新增笔刷
 
+/** 公共字段 */
 export interface DrawActionBase {
-  /** 动作唯一 ID（uuid 或 nanoid） */
-  id: string;
-  /** 所属房间 ID */
-  roomId: string;
-  /** 创建该动作的用户 ID */
-  userId: string;
-  /** 动作类型 */
+  id: ActionId;
+  roomId: RoomId;
+  pageId: PageId; // 必须字段
+  userId: UserId;
   type: DrawActionType;
-  /** 颜色，如 '#ff0000' */
   color: string;
-  /** 线宽（以 px 为单位，渲染时可根据 dpr 调整） */
   strokeWidth: number;
-  /** 是否已被软删除（Undo 后为 true） */
   isDeleted: boolean;
-  /** 创建时间戳（服务器生成，ms） */
   createdAt: number;
 }
 
+/** 自由绘制 */
 export interface FreehandDrawAction extends DrawActionBase {
   type: 'freehand';
-  /** 整条笔迹的点序列（归一化坐标） */
   points: Point[];
+  brushType: BrushType; // 区分铅笔/水彩/激光
 }
 
-export interface RectDrawAction extends DrawActionBase {
-  type: 'rect';
-  /** 左上 / 起点（归一化） */
+/** 形状绘制 (双点定义) */
+export interface ShapeDrawAction extends DrawActionBase {
+  type: 'rect' | 'ellipse' | 'triangle' | 'star' | 'arrow' | 'diamond' | 'pentagon' | 'hexagon';
   start: Point;
-  /** 右下 / 终点（归一化） */
   end: Point;
 }
 
-export interface EllipseDrawAction extends DrawActionBase {
-  type: 'ellipse';
-  /** 对角点 1（归一化） */
-  start: Point;
-  /** 对角点 2（归一化） */
-  end: Point;
-}
+export type DrawAction = FreehandDrawAction | ShapeDrawAction;
 
-export type DrawAction =
-  | FreehandDrawAction
-  | RectDrawAction
-  | EllipseDrawAction;
-```
-
-#### 4.2.3 User & CursorPosition
-
-```ts
+/* --- 用户与房间 --- */
 export interface CursorPosition {
-  /** 0 ~ 1 之间的归一化坐标 */
   x: number;
   y: number;
-  /** 最后更新时间戳 */
+  pageId: PageId; // 光标所在页
   updatedAt: number;
 }
 
 export interface User {
-  /** 用户唯一 ID（由服务器生成并与 socket 关联） */
-  id: string;
-  /** 昵称（由客户端传入） */
+  id: UserId;
   name: string;
-  /** 用户主色调（用于光标和默认画笔） */
   color: string;
-  /** 当前光标位置（如果为 null，则表示光标不可见 / 离线） */
   cursor: CursorPosition | null;
 }
-```
 
-#### 4.2.4 RoomState
-
-```ts
 export interface RoomState {
-  /** 房间 ID */
-  id: string;
-  /** 房间内所有用户，以 userId 为 key */
-  users: Record<string, User>;
-  /**
-   * 房间内所有绘制动作，以 actionId 为 key
-   * 软删除通过修改其中的 isDeleted 字段实现
-   */
-  actions: Record<string, DrawAction>;
-  /**
-   * 动作的顺序（服务器插入顺序）
-   * 渲染时按该顺序遍历并绘制
-   */
-  actionOrder: string[];
-  /** 房间创建时间 */
+  id: RoomId;
+  users: Record<UserId, User>;
+  actions: Record<ActionId, DrawAction>;
+  actionOrder: ActionId[];
   createdAt: number;
-  /** 每个用户的撤销栈（用于重做），值是被撤销的 actionId */
-  userUndoStacks: Record<string, string[]>;
+  userUndoStacks: Record<UserId, ActionId[]>;
 }
 ```
+### 4.2 Socket.io 事件清单
+Client -> Server
+事件名,Payload 结构,说明
+room:join,"{ roomId, userName }",加入房间
+draw:commit,"{ roomId, action: DrawAction }",提交绘制
+action:undo,"{ roomId, userId }",撤销该用户的上一步
+board:clear,"{ roomId, pageId }",新增：清空指定页面的画布
+cursor:update,"{ roomId, position: Point, pageId }",更新光标 (含页码)
 
-#### 4.2.5 Socket.io 类型（可选增强）
-
-在前端和后端都可以使用 **强类型事件定义**：
-
-```ts
-export interface ClientToServerEvents {
-  'room:join': (payload: { roomId: string; userName: string }) => void;
-  'room:leave': (payload: { roomId: string }) => void;
-  'draw:commit': (payload: { roomId: string; action: DrawAction }) => void;
-  'action:undo': (payload: { roomId: string }) => void;
-  'action:redo': (payload: { roomId: string }) => void;
-  'cursor:update': (payload: { roomId: string; position: Point }) => void;
-  'user:rename': (payload: { roomId: string; name: string }) => void;
-}
-
-export interface ServerToClientEvents {
-  'room:joined': (payload: { roomId: string; self: User; state: RoomState }) => void;
-  'room:join:error': (payload: { roomId: string; code: string; message: string }) => void;
-  'room:user-joined': (payload: { roomId: string; user: User }) => void;
-  'room:user-left': (payload: { roomId: string; userId: string }) => void;
-  'draw:created': (payload: { roomId: string; action: DrawAction }) => void;
-  'action:updatedDeleted': (payload: { roomId: string; actionId: string; isDeleted: boolean }) => void;
-  'cursor:updated': (payload: { roomId: string; userId: string; position: Point }) => void;
-  'room:state-sync': (payload: { roomId: string; state: RoomState; reason: string }) => void;
-  error: (payload: { code: string; message: string }) => void;
-}
-```
-
+Server -> Client
+事件名,Payload 结构,说明
+room:joined,"{ roomId, self, state }",加入成功，返回全量状态
+draw:created,"{ roomId, action }",广播新动作
+action:updatedDeleted,"{ roomId, actionId, isDeleted }",广播撤销/恢复
+board:cleared,"{ roomId, pageId }",新增：广播清屏指令
+cursor:updated,"{ roomId, userId, position, pageId }",广播他人光标
+room:state-sync,"{ roomId, state, reason }",全量同步兜底
 ---
 
 ## 5. 关键技术难点与解决方案
