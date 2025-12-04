@@ -48,9 +48,18 @@ export function renderAction(ctx: CanvasRenderingContext2D, action: DrawAction, 
     case 'freehand': {
       const { points } = action;
       if (points.length < 1) return;
-      ctx.moveTo(toX(points[0].x), toY(points[0].y));
-      for (let i = 1; i < points.length; i++) {
-        ctx.lineTo(toX(points[i].x), toY(points[i].y));
+      
+      const p0 = points[0];
+      ctx.moveTo(toX(p0.x), toY(p0.y));
+
+      if (points.length === 1) {
+        // ✨ 关键修复：如果只有一个点，画一个“原地”的线，配合 round lineCap 形成圆点
+        ctx.lineTo(toX(p0.x), toY(p0.y));
+      } else {
+        // 多个点，正常连线
+        for (let i = 1; i < points.length; i++) {
+          ctx.lineTo(toX(points[i].x), toY(points[i].y));
+        }
       }
       break;
     }

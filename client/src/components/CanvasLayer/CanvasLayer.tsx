@@ -96,10 +96,18 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
             ctx.lineWidth = strokeWidth;
           }
 
+          // ✨ 关键修复：预览层也支持画点
           if (freehandPoints.current.length > 0) {
              const points = freehandPoints.current;
              ctx.moveTo(points[0].x, points[0].y);
-             for(let i=1; i<points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+             
+             if (points.length === 1) {
+               // 只有一个点，原地画一下
+               ctx.lineTo(points[0].x, points[0].y);
+             } else {
+               // 多个点，正常连线
+               for(let i=1; i<points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+             }
              ctx.stroke();
           }
           
