@@ -43,7 +43,7 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
 
   const lasersRef = useRef<FadingStroke[]>([]);
 
-  // --- 动画循环 (处理激光消失 + 实时拖拽预览) ---
+  // --- 1. 动画循环 (处理激光消失 + 实时拖拽预览) ---
   useEffect(() => {
     let animationFrameId: number;
 
@@ -51,11 +51,11 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
       const ctx = previewCanvasRef.current?.getContext('2d');
       if (!ctx) return;
 
-      // 1. 清空 Preview 层
+      // 清空 Preview 层
       ctx.clearRect(0, 0, size.width, size.height);
       const now = Date.now();
 
-      // 2. 绘制正在消失的激光 (Lasers)
+      // A. 绘制正在消失的激光 (Lasers)
       for (let i = lasersRef.current.length - 1; i >= 0; i--) {
         const item = lasersRef.current[i];
         const age = now - item.startTime;
@@ -67,13 +67,13 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
           const alpha = 1 - (age / lifeTime);
           ctx.save();
           ctx.globalAlpha = alpha;
-          // 渲染 laser，注意传入宽高
+          // 渲染 laser，注意传入宽高还原坐标
           renderAction(ctx, item.action, size.width, size.height);
           ctx.restore();
         }
       }
 
-      // 3. 绘制当前正在画的内容 (Current Drawing)
+      // B. 绘制当前正在画的内容 (Current Drawing)
       if (isDrawing && startPoint.current && lastPoint.current) {
         if (activeTool === 'freehand') {
           ctx.beginPath();
@@ -91,21 +91,20 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
             ctx.shadowBlur = 10;
             ctx.shadowColor = color;
           } else if (brushType === 'eraser') {
-            // 橡皮擦预览：白色，不加倍 (完全由 strokeWidth 控制)
+            // 橡皮擦预览：白色，使用当前设定的粗细
             ctx.strokeStyle = '#ffffff'; 
             ctx.lineWidth = strokeWidth;
           }
 
-          // ✨ 关键修复：预览层也支持画点
+          // 画线逻辑 (包含“单点”修复)
           if (freehandPoints.current.length > 0) {
              const points = freehandPoints.current;
              ctx.moveTo(points[0].x, points[0].y);
              
              if (points.length === 1) {
-               // 只有一个点，原地画一下
+               // 只有一个点，原地画一下，形成圆点
                ctx.lineTo(points[0].x, points[0].y);
              } else {
-               // 多个点，正常连线
                for(let i=1; i<points.length; i++) ctx.lineTo(points[i].x, points[i].y);
              }
              ctx.stroke();
@@ -131,9 +130,11 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
     return () => cancelAnimationFrame(animationFrameId);
   }, [size, isDrawing, activeTool, brushType, color, strokeWidth]);
 
-  // --- 监听网络消息 ---
+  // --- 2. 监听网络消息 (含历史记录同步) ---
   useEffect(() => {
     const socket = network.socket;
+
+    // 处理别人新画的
     const handleRemoteDraw = (payload: { roomId: string; action: DrawAction }) => {
       if (payload.roomId !== roomId || payload.action.pageId !== pageId) return;
 
@@ -150,6 +151,7 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
       }
     };
     
+    // 处理清屏
     const handleClear = (payload: { roomId: string; pageId: PageId }) => {
       if (payload.roomId === roomId && payload.pageId === pageId) {
         const ctx = mainCanvasRef.current?.getContext('2d');
@@ -157,16 +159,41 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
       }
     };
 
+    // ✨ 处理加入房间/重连时的历史记录同步
+    const handleStateSync = (payload: { state: any }) => {
+      const ctx = mainCanvasRef.current?.getContext('2d');
+      if (!ctx) return;
+
+      // 1. 清空当前画布 (防止重绘重复内容)
+      ctx.clearRect(0, 0, size.width, size.height);
+
+      // 2. 获取并排序动作
+      const actions = Object.values(payload.state.actions) as DrawAction[];
+      actions.sort((a, b) => a.createdAt - b.createdAt);
+
+      // 3. 遍历绘制
+      actions.forEach(action => {
+        // 只绘制当前页且未删除的动作
+        if (action.pageId === pageId && !action.isDeleted) {
+           renderAction(ctx, action, size.width, size.height);
+        }
+      });
+    };
+
     socket.on('draw:created', handleRemoteDraw);
     socket.on('board:cleared', handleClear);
+    socket.on('room:joined', handleStateSync);     // 首次加入
+    socket.on('room:state-sync', handleStateSync); // 重连同步
 
     return () => {
       socket.off('draw:created', handleRemoteDraw);
       socket.off('board:cleared', handleClear);
+      socket.off('room:joined', handleStateSync);
+      socket.off('room:state-sync', handleStateSync);
     };
   }, [roomId, pageId, size]);
 
-  // --- 辅助：形状预览 ---
+  // --- 3. 辅助：形状预览绘制 ---
   const drawPreviewShape = (ctx: CanvasRenderingContext2D, type: DrawActionType, start: Point, end: Point) => {
     if (type === 'rect') {
       ctx.rect(start.x, start.y, end.x - start.x, end.y - start.y);
@@ -244,7 +271,7 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
     ctx.closePath();
   }
 
-  // --- 事件处理 ---
+  // --- 4. 事件处理 ---
   const handlePointerDown = (e: React.PointerEvent) => {
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
     setIsDrawing(true);
@@ -260,7 +287,6 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
     if (activeTool === 'freehand') {
       freehandPoints.current = [p];
     }
-    // 注意：这里删除了旧的 ctx 设置逻辑，完全交由 renderLoop 处理，更清晰
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
@@ -315,11 +341,13 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
 
     if (action) {
       if (activeTool === 'freehand' && brushType === 'laser') {
+        // 激光笔：加入动画队列
         lasersRef.current.push({
           action: action,
           startTime: Date.now()
         });
       } else {
+        // 其他：本地乐观绘制 (需要传入宽高)
         const mainCtx = mainCanvasRef.current!.getContext('2d')!;
         renderAction(mainCtx, action, width, height); 
       }
@@ -332,8 +360,19 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
     freehandPoints.current = [];
   };
 
+  // --- 动态计算光标样式 ---
+  const getCursorStyle = () => {
+    if (activeTool === 'freehand') {
+      return brushType === 'eraser' ? 'cursor-cell' : 'cursor-crosshair';
+    }
+    return 'cursor-crosshair';
+  };
+
   return (
-    <div ref={containerRef} className="relative w-full h-full touch-none cursor-crosshair overflow-hidden">
+    <div 
+      ref={containerRef} 
+      className={`relative w-full h-full touch-none overflow-hidden ${getCursorStyle()}`}
+    >
       <canvas ref={mainCanvasRef} className="absolute top-0 left-0 w-full h-full pointer-events-none" />
       <canvas 
         ref={previewCanvasRef} 

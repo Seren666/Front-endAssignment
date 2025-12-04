@@ -4,21 +4,24 @@ import { CanvasLayer } from '../components/CanvasLayer/CanvasLayer';
 import { Toolbar } from '../components/Toolbar/Toolbar';
 import type{ DrawActionType, BrushType, PageId } from '../shared/protocol';
 import { network } from '../services/socket';
-import { nanoid } from 'nanoid';
 import { File, Plus, LogOut } from 'lucide-react';
-
-const TEST_ROOM_ID = 'room-1';
 
 export const BoardPage = () => {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const initialName = location.state?.username || 'User-' + nanoid(4);
-  const [userName, setUserName] = useState(initialName);
-  
-  // ✨ 更名：默认白板名
-  const [boardName, setBoardName] = useState('未命名创作');
-  
+  // 1. 安全检查：如果没有接收到登录数据，踢回首页
+  useEffect(() => {
+    if (!location.state || !location.state.roomId || !location.state.username) {
+      navigate('/', { replace: true });
+    }
+  }, [location, navigate]);
+
+  // 获取数据 (如果上面被踢回了，这里的数据为空也没关系)
+  const { roomId = '', username = '', password = '' } = location.state || {};
+
+  // 状态定义
+  const [boardName, setBoardName] = useState(`房间: ${roomId}`);
   const [activeTool, setActiveTool] = useState<DrawActionType>('freehand');
   const [brushType, setBrushType] = useState<BrushType>('pencil');
   const [activePage, setActivePage] = useState<PageId>('page-1'); 
@@ -26,9 +29,9 @@ export const BoardPage = () => {
   const [brushWidth, setBrushWidth] = useState(3);       
   const [eraserWidth, setEraserWidth] = useState(30);    
 
-  // ✨ 动态修改标题：这里也改成 CollabCanvas
+  // 动态标题
   useEffect(() => {
-    document.title = `${boardName} - CollabCanvas`; 
+    document.title = `${boardName} - CollaBoard`; 
   }, [boardName]);
 
   const isEraser = activeTool === 'freehand' && brushType === 'eraser';
@@ -39,18 +42,33 @@ export const BoardPage = () => {
     else setBrushWidth(width);
   };
 
+  // --- 初始化连接 ---
   useEffect(() => {
-    network.joinRoom(TEST_ROOM_ID, userName);
-  }, []);
+    if (roomId && username) {
+      // 真实加入：带上 roomId, username (未来还要带 password)
+      console.log(`🚀 正在加入房间: ${roomId} as ${username} (密码: ${password})`);
+      network.joinRoom(roomId, username);
+    }
 
-  const handleUndo = () => network.socket.emit('action:undo', { roomId: TEST_ROOM_ID, userId: network.socket.id || '' });
-  const handleClear = () => network.socket.emit('board:clear', { roomId: TEST_ROOM_ID, pageId: activePage });
+    // 错误监听
+    const handleJoinError = (payload: any) => {
+        alert(`加入失败: ${payload.message}`);
+        navigate('/');
+    };
+    network.socket.on('room:join:error', handleJoinError);
+    return () => { network.socket.off('room:join:error', handleJoinError); };
+  }, [roomId, username, password, navigate]);
+
+  const handleUndo = () => network.socket.emit('action:undo', { roomId, userId: network.socket.id || '' });
+  const handleClear = () => network.socket.emit('board:clear', { roomId, pageId: activePage });
 
   const handleLogout = () => {
-    if(window.confirm("确定要退出画板吗？")) {
+    if(window.confirm("确定要退出房间吗？")) {
       navigate('/'); 
     }
   };
+
+  if (!location.state) return null; // 防止闪烁
 
   return (
     <div 
@@ -66,9 +84,8 @@ export const BoardPage = () => {
             <LogOut size={18} />
           </button>
 
-          {/* Logo: 显示用户首字 */}
           <div className="w-6 h-6 bg-blue-600 rounded flex items-center justify-center text-white font-bold text-xs shadow-sm">
-            {userName.charAt(0).toUpperCase()}
+            {username.charAt(0).toUpperCase()}
           </div>
           
           <span 
@@ -77,7 +94,6 @@ export const BoardPage = () => {
               const newName = window.prompt("重命名白板:", boardName);
               if (newName) setBoardName(newName);
             }}
-            title="点击重命名"
           >
             {boardName}
           </span>
@@ -92,15 +108,8 @@ export const BoardPage = () => {
           </button>
         </div>
 
-        <div 
-          className="text-xs text-gray-500 cursor-pointer hover:text-blue-600 hover:bg-gray-100 px-2 py-1 rounded transition-colors select-none"
-          onClick={() => {
-            const newName = window.prompt("修改您的昵称:", userName);
-            if (newName) setUserName(newName);
-          }}
-          title="点击修改昵称"
-        >
-          {userName}
+        <div className="text-xs text-gray-500 px-2 py-1 rounded select-none">
+          {username}
         </div>
       </header>
 
@@ -121,7 +130,7 @@ export const BoardPage = () => {
         </div>
 
         <CanvasLayer 
-          roomId={TEST_ROOM_ID}
+          roomId={roomId}
           pageId={activePage}
           activeTool={activeTool}
           brushType={brushType}

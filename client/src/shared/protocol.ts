@@ -1,10 +1,11 @@
 /**
  * 🚨 shared/protocol.ts
- * CollaBoard v1.2 最终版协议
+ * CollaBoard v1.3 最终版协议
  * * 更新日志：
  * - v1.0: 基础绘图 (Freehand, Rect, Ellipse)
  * - v1.1: 增加 Arrow, Star, Triangle, BrushType, PageId
  * - v1.2: 增加 Diamond, Pentagon, Hexagon
+ * - v1.3: 增加 橡皮擦 (Eraser) & 房间密码 (Password)
  */
 
 export const PROTOCOL_VERSION = '1.2.0';

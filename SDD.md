@@ -3,7 +3,7 @@
 > 技术栈回顾：
 > 前端：React + TypeScript + Vite + HTML5 Canvas + Tailwind CSS
 > 后端：Node.js + Express + Socket.io
-> 存储：内存存储（In-Memory），不做持久化
+> 存储：内存存储（In-Memory），暂时不做持久化
 
 ---
 
@@ -13,18 +13,11 @@
 
 本《软件设计说明书》用于指导一个由大学生组成的前端 / 全栈小组实现 **CollaBoard v1.0 进阶版**——一个多人实时协作白板应用。
 
-目标：
-
-* 让项目 **超过简单 MVP 难度**，在功能和架构上更完整、更工程化。
-* 同时保证 **实现难度在学生可控范围内**，不涉及复杂数学、不涉及 CRDT、无限画布等高难度内容。
-* 通过清晰的数据结构和通信协议，减少“写着写着迷路”的情况。
-
 ### 1.2 读者对象
 
 * 前端开发：负责 React + TS + Canvas + Tailwind 实现。
 * 后端开发：负责 Express + Socket.io，维护房间状态。
 * 全栈 / 组长：负责整体架构、代码组织和集成。
-* 指导老师 / 助教：用于理解项目设计成熟度。
 
 ### 1.3 项目背景与范围
 
@@ -203,6 +196,12 @@ const y = yNorm * canvasHeight;
   * 动画循环：前端维护一个 lasers 队列，利用 requestAnimationFrame 每一帧递减透明度。
 
   * 自动消失：设定生命周期为 2000ms，超时后从队列移除。
+4.  **橡皮擦 (Eraser)**:
+    * **交互逻辑**：
+        * **预览层 (Frontend Preview)**：使用白色粗线条 (`strokeStyle = '#ffffff'`) 模拟遮盖效果，给用户即时反馈。
+        * **主画布 (Main Canvas)**：提交数据时，渲染器使用 `globalCompositeOperation = 'destination-out'` 模式，将笔迹对应的像素变为透明（真正的擦除）。
+    * **数据结构**：本质上是一条 `type: 'freehand'` 且 `brushType: 'eraser'` 的路径数据。
+    * **独立设置**：橡皮擦拥有独立的线宽设置 (`eraserWidth`)，与画笔粗细解耦。
 
 3.3 图形与连接线 (Shapes)
 所有图形统一采用 双点定义法 (start, end)，渲染器根据这两点计算几何路径：
@@ -389,7 +388,7 @@ const sendCursorThrottled = useMemo(
      * `offscreenCanvas.toDataURL()` 后下载。
    * 优点：即使将来有多层 canvas，导出逻辑仍然统一；也可以选择不导出光标。
 
-3.7 多画布支持 (Multi-Page) [v1.2 新增]
+### 3.7 多画布支持 (Multi-Page) [v1.2 新增]
 * 数据结构：所有 DrawAction 和用户 Cursor 均增加 pageId 字段 (默认 'page-1')。
 
 * 渲染隔离：
@@ -426,7 +425,7 @@ export type DrawActionType =
   | 'diamond' | 'pentagon' | 'hexagon' // v1.2 新增形状
   | 'arrow';   // v1.2 新增箭头
 
-export type BrushType = 'pencil' | 'marker' | 'laser'; // v1.2 新增笔刷
+export type BrushType = 'pencil' | 'marker' | 'laser'| 'eraser'; // v1.2 新增笔刷
 
 /** 公共字段 */
 export interface DrawActionBase {
