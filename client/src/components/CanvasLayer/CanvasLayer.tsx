@@ -13,6 +13,7 @@ interface CanvasLayerProps {
   brushType: BrushType;
   color: string;
   strokeWidth: number;
+  initialState?: any;
 }
 
 interface FadingStroke {
@@ -26,7 +27,8 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
   activeTool, 
   brushType,
   color, 
-  strokeWidth 
+  strokeWidth,
+  initialState
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const mainCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -40,40 +42,63 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
   const startPoint = useRef<Point | null>(null);
   const lastPoint = useRef<Point | null>(null);
   const freehandPoints = useRef<Point[]>([]);
-
   const lasersRef = useRef<FadingStroke[]>([]);
 
-  // --- 1. 动画循环 (处理激光消失 + 实时拖拽预览) ---
+  const actionsRef = useRef<Map<string, DrawAction>>(new Map());
+
+  // --- 1. 核心重绘 ---
+  const redrawAll = () => {
+    const ctx = mainCanvasRef.current?.getContext('2d');
+    if (!ctx || size.width === 0 || size.height === 0) return;
+
+    ctx.clearRect(0, 0, size.width, size.height);
+
+    const allActions = Array.from(actionsRef.current.values());
+    allActions.sort((a, b) => a.createdAt - b.createdAt);
+
+    allActions.forEach(action => {
+      const actionPageId = action.pageId || 'page-1';
+      if (actionPageId === pageId && !action.isDeleted) {
+        renderAction(ctx, action, size.width, size.height);
+      }
+    });
+  };
+
+  // 尺寸变化时重绘
+  useEffect(() => {
+    if (actionsRef.current.size > 0 && size.width > 0) {
+      redrawAll();
+    }
+  }, [size.width, size.height, pageId]);
+
+  // --- 2. 动画循环 ---
   useEffect(() => {
     let animationFrameId: number;
-
     const renderLoop = () => {
       const ctx = previewCanvasRef.current?.getContext('2d');
       if (!ctx) return;
 
-      // 清空 Preview 层
       ctx.clearRect(0, 0, size.width, size.height);
       const now = Date.now();
 
-      // A. 绘制正在消失的激光 (Lasers)
+      // 激光
       for (let i = lasersRef.current.length - 1; i >= 0; i--) {
         const item = lasersRef.current[i];
         const age = now - item.startTime;
-        const lifeTime = 2000; // 激光存活 2 秒
-
-        if (age >= lifeTime) {
+        if (age >= 2000) {
           lasersRef.current.splice(i, 1);
         } else {
-          const alpha = 1 - (age / lifeTime);
+          const alpha = 1 - (age / 2000);
           ctx.save();
           ctx.globalAlpha = alpha;
-          // 渲染 laser，注意传入宽高还原坐标
+          ctx.shadowBlur = 10;
+          ctx.shadowColor = item.action.color;
           renderAction(ctx, item.action, size.width, size.height);
           ctx.restore();
         }
       }
 
-      // B. 绘制当前正在画的内容 (Current Drawing)
+      // 预览绘制
       if (isDrawing && startPoint.current && lastPoint.current) {
         if (activeTool === 'freehand') {
           ctx.beginPath();
@@ -82,140 +107,146 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
           ctx.lineCap = 'round';
           ctx.lineJoin = 'round';
           
-          // --- 笔刷样式处理 ---
           if (brushType === 'marker') {
             ctx.globalAlpha = 0.5;
             ctx.lineWidth = strokeWidth * 2;
           } else if (brushType === 'laser') {
             ctx.strokeStyle = color;
-            ctx.shadowBlur = 10;
-            ctx.shadowColor = color;
           } else if (brushType === 'eraser') {
-            // 橡皮擦预览：白色，使用当前设定的粗细
             ctx.strokeStyle = '#ffffff'; 
             ctx.lineWidth = strokeWidth;
           }
 
-          // 画线逻辑 (包含“单点”修复)
           if (freehandPoints.current.length > 0) {
              const points = freehandPoints.current;
              ctx.moveTo(points[0].x, points[0].y);
-             
-             if (points.length === 1) {
-               // 只有一个点，原地画一下，形成圆点
-               ctx.lineTo(points[0].x, points[0].y);
-             } else {
-               for(let i=1; i<points.length; i++) ctx.lineTo(points[i].x, points[i].y);
-             }
+             if (points.length === 1) ctx.lineTo(points[0].x, points[0].y);
+             else for(let i=1; i<points.length; i++) ctx.lineTo(points[i].x, points[i].y);
              ctx.stroke();
           }
-          
-          // 还原状态
           ctx.globalAlpha = 1.0;
           ctx.shadowBlur = 0;
-
         } else {
-          // 形状预览
           ctx.beginPath();
           ctx.strokeStyle = color;
           ctx.lineWidth = strokeWidth;
           drawPreviewShape(ctx, activeTool, startPoint.current, lastPoint.current);
         }
       }
-
       animationFrameId = requestAnimationFrame(renderLoop);
     };
-
     renderLoop();
     return () => cancelAnimationFrame(animationFrameId);
   }, [size, isDrawing, activeTool, brushType, color, strokeWidth]);
 
-  // --- 2. 监听网络消息 (含历史记录同步) ---
+  // --- 3. 初始数据加载 ---
+  useEffect(() => {
+    if (initialState && initialState.actions) {
+      actionsRef.current.clear();
+      const actions = Object.values(initialState.actions) as DrawAction[];
+      actions.forEach(a => actionsRef.current.set(a.id, a));
+      redrawAll();
+    }
+  }, [initialState]);
+
+  // --- 4. Socket 监听 ---
   useEffect(() => {
     const socket = network.socket;
 
-    // 处理别人新画的
     const handleRemoteDraw = (payload: { roomId: string; action: DrawAction }) => {
-      if (payload.roomId !== roomId || payload.action.pageId !== pageId) return;
+      if (payload.roomId !== roomId) return;
 
       if (payload.action.type === 'freehand' && payload.action.brushType === 'laser') {
-        lasersRef.current.push({
-          action: payload.action,
-          startTime: Date.now()
-        });
-      } else {
+        const actionPageId = payload.action.pageId || 'page-1';
+        if (actionPageId === pageId) {
+          lasersRef.current.push({ action: payload.action, startTime: Date.now() });
+        }
+        return;
+      }
+
+      actionsRef.current.set(payload.action.id, payload.action);
+      
+      const actionPageId = payload.action.pageId || 'page-1';
+      if (actionPageId === pageId) {
         const ctx = mainCanvasRef.current?.getContext('2d');
-        if (ctx) {
+        if (ctx && size.width > 0) {
           renderAction(ctx, payload.action, size.width, size.height);
         }
       }
     };
     
-    // 处理清屏
     const handleClear = (payload: { roomId: string; pageId: PageId }) => {
-      if (payload.roomId === roomId && payload.pageId === pageId) {
-        const ctx = mainCanvasRef.current?.getContext('2d');
-        if (ctx) ctx.clearRect(0, 0, size.width, size.height);
+      if (payload.roomId !== roomId) return;
+      actionsRef.current.forEach(action => {
+        const actionPageId = action.pageId || 'page-1';
+        if (actionPageId === payload.pageId) action.isDeleted = true;
+      });
+      if (payload.pageId === pageId) redrawAll();
+    };
+
+    const handleUpdateDeleted = (payload: { roomId: string; actionId: string; isDeleted: boolean }) => {
+      if (payload.roomId !== roomId) return;
+      const action = actionsRef.current.get(payload.actionId);
+      if (action) {
+        action.isDeleted = payload.isDeleted;
+        const actionPageId = action.pageId || 'page-1';
+        if (actionPageId === pageId) redrawAll();
       }
     };
 
-    // ✨ 处理加入房间/重连时的历史记录同步
     const handleStateSync = (payload: { state: any }) => {
-      const ctx = mainCanvasRef.current?.getContext('2d');
-      if (!ctx) return;
-
-      // 1. 清空当前画布 (防止重绘重复内容)
-      ctx.clearRect(0, 0, size.width, size.height);
-
-      // 2. 获取并排序动作
-      const actions = Object.values(payload.state.actions) as DrawAction[];
-      actions.sort((a, b) => a.createdAt - b.createdAt);
-
-      // 3. 遍历绘制
-      actions.forEach(action => {
-        // 只绘制当前页且未删除的动作
-        if (action.pageId === pageId && !action.isDeleted) {
-           renderAction(ctx, action, size.width, size.height);
-        }
-      });
+      actionsRef.current.clear();
+      if (payload.state && payload.state.actions) {
+        const actions = Object.values(payload.state.actions) as DrawAction[];
+        actions.forEach(a => actionsRef.current.set(a.id, a));
+      }
+      redrawAll();
     };
 
     socket.on('draw:created', handleRemoteDraw);
     socket.on('board:cleared', handleClear);
-    socket.on('room:joined', handleStateSync);     // 首次加入
-    socket.on('room:state-sync', handleStateSync); // 重连同步
+    socket.on('action:updatedDeleted', handleUpdateDeleted);
+    socket.on('room:joined', handleStateSync);
+    socket.on('room:state-sync', handleStateSync);
 
     return () => {
       socket.off('draw:created', handleRemoteDraw);
       socket.off('board:cleared', handleClear);
+      socket.off('action:updatedDeleted', handleUpdateDeleted);
       socket.off('room:joined', handleStateSync);
       socket.off('room:state-sync', handleStateSync);
     };
   }, [roomId, pageId, size]);
 
-  // --- 3. 辅助：形状预览绘制 ---
+  // --- 5. 辅助绘图 ---
   const drawPreviewShape = (ctx: CanvasRenderingContext2D, type: DrawActionType, start: Point, end: Point) => {
-    if (type === 'rect') {
-      ctx.rect(start.x, start.y, end.x - start.x, end.y - start.y);
-    } else if (type === 'ellipse') {
-      const cx = (start.x + end.x) / 2;
-      const cy = (start.y + end.y) / 2;
-      const rx = Math.abs(end.x - start.x) / 2;
-      const ry = Math.abs(end.y - start.y) / 2;
-      ctx.ellipse(cx, cy, rx, ry, 0, 0, 2 * Math.PI);
+    ctx.beginPath();
+    if (type === 'rect') ctx.rect(start.x, start.y, end.x - start.x, end.y - start.y);
+    else if (type === 'ellipse') {
+       const cx = (start.x + end.x) / 2; const cy = (start.y + end.y) / 2;
+       const rx = Math.abs(end.x - start.x) / 2; const ry = Math.abs(end.y - start.y) / 2;
+       ctx.ellipse(cx, cy, rx, ry, 0, 0, 2 * Math.PI);
     } else if (type === 'triangle') {
-      const cx = (start.x + end.x) / 2;
-      ctx.moveTo(cx, start.y);
-      ctx.lineTo(start.x, end.y);
-      ctx.lineTo(end.x, end.y);
-      ctx.closePath();
+        const cx = (start.x + end.x) / 2;
+        ctx.moveTo(cx, start.y); ctx.lineTo(start.x, end.y); ctx.lineTo(end.x, end.y); ctx.closePath();
     } else if (type === 'star') {
-      const cx = (start.x + end.x) / 2;
-      const cy = (start.y + end.y) / 2;
-      const radius = Math.min(Math.abs(end.x - start.x), Math.abs(end.y - start.y)) / 2;
-      const spikes = 5;
-      const outerRadius = radius;
-      const innerRadius = radius / 2;
+        const cx = (start.x + end.x) / 2; const cy = (start.y + end.y) / 2;
+        const radius = Math.min(Math.abs(end.x - start.x), Math.abs(end.y - start.y)) / 2;
+        drawStar(ctx, cx, cy, 5, radius, radius / 2);
+    } else if (type === 'arrow') {
+        drawArrow(ctx, start.x, start.y, end.x, end.y);
+    } else if (type === 'diamond') {
+        const cx = (start.x + end.x) / 2; const cy = (start.y + end.y) / 2;
+        ctx.moveTo(cx, start.y); ctx.lineTo(end.x, cy); ctx.lineTo(cx, end.y); ctx.lineTo(start.x, cy); ctx.closePath();
+    } else if (type === 'pentagon') {
+        drawPreviewPolygon(ctx, start, end, 5);
+    } else if (type === 'hexagon') {
+        drawPreviewPolygon(ctx, start, end, 6);
+    }
+    ctx.stroke();
+  };
+
+  const drawStar = (ctx: CanvasRenderingContext2D, cx: number, cy: number, spikes: number, outerRadius: number, innerRadius: number) => {
       let rot = Math.PI / 2 * 3;
       let x = cx; let y = cy;
       const step = Math.PI / spikes;
@@ -232,30 +263,18 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
       }
       ctx.lineTo(cx, cy - outerRadius);
       ctx.closePath();
-    } else if (type === 'arrow') {
+  }
+
+  const drawArrow = (ctx: CanvasRenderingContext2D, fromX: number, fromY: number, toX: number, toY: number) => {
       const headlen = 15;
-      const angle = Math.atan2(end.y - start.y, end.x - start.x);
-      ctx.moveTo(start.x, start.y);
-      ctx.lineTo(end.x, end.y);
-      ctx.moveTo(end.x, end.y);
-      ctx.lineTo(end.x - headlen * Math.cos(angle - Math.PI / 6), end.y - headlen * Math.sin(angle - Math.PI / 6));
-      ctx.moveTo(end.x, end.y);
-      ctx.lineTo(end.x - headlen * Math.cos(angle + Math.PI / 6), end.y - headlen * Math.sin(angle + Math.PI / 6));
-    } else if (type === 'diamond') {
-      const cx = (start.x + end.x) / 2;
-      const cy = (start.y + end.y) / 2;
-      ctx.moveTo(cx, start.y);
-      ctx.lineTo(end.x, cy);
-      ctx.lineTo(cx, end.y);
-      ctx.lineTo(start.x, cy);
-      ctx.closePath();
-    } else if (type === 'pentagon') {
-      drawPreviewPolygon(ctx, start, end, 5);
-    } else if (type === 'hexagon') {
-      drawPreviewPolygon(ctx, start, end, 6);
-    }
-    ctx.stroke();
-  };
+      const angle = Math.atan2(toY - fromY, toX - fromX);
+      ctx.moveTo(fromX, fromY);
+      ctx.lineTo(toX, toY);
+      ctx.moveTo(toX, toY);
+      ctx.lineTo(toX - headlen * Math.cos(angle - Math.PI / 6), toY - headlen * Math.sin(angle - Math.PI / 6));
+      ctx.moveTo(toX, toY);
+      ctx.lineTo(toX - headlen * Math.cos(angle + Math.PI / 6), toY - headlen * Math.sin(angle + Math.PI / 6));
+  }
 
   const drawPreviewPolygon = (ctx: CanvasRenderingContext2D, start: Point, end: Point, sides: number) => {
     const cx = (start.x + end.x) / 2;
@@ -271,35 +290,21 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
     ctx.closePath();
   }
 
-  // --- 4. 事件处理 ---
+  // --- 6. 事件处理 ---
   const handlePointerDown = (e: React.PointerEvent) => {
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
     setIsDrawing(true);
-    
     const rect = containerRef.current!.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    const p = { x, y };
-
-    startPoint.current = p;
-    lastPoint.current = p;
-    
-    if (activeTool === 'freehand') {
-      freehandPoints.current = [p];
-    }
+    const p = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    startPoint.current = p; lastPoint.current = p;
+    if (activeTool === 'freehand') freehandPoints.current = [p];
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
     if (!isDrawing || !startPoint.current || !lastPoint.current) return;
-
     const rect = containerRef.current!.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    const currentPoint = { x, y };
-
-    if (activeTool === 'freehand') {
-      freehandPoints.current.push(currentPoint);
-    }
+    const currentPoint = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    if (activeTool === 'freehand') freehandPoints.current.push(currentPoint);
     lastPoint.current = currentPoint;
   };
 
@@ -307,7 +312,6 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
     if (!isDrawing) return;
     setIsDrawing(false);
     (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-
     const { width, height } = size; 
     
     const baseAction = {
@@ -322,64 +326,37 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
     };
 
     let action: DrawAction | null = null;
-
     if (activeTool === 'freehand' && freehandPoints.current.length > 0) {
-      action = {
-        ...baseAction,
-        type: 'freehand',
-        brushType, 
-        points: freehandPoints.current.map(p => normalizePoint(p, width, height)),
-      };
-    } else if (['rect', 'ellipse', 'triangle', 'star', 'arrow', 'diamond', 'pentagon', 'hexagon'].includes(activeTool) && startPoint.current && lastPoint.current) {
-      action = {
-        ...baseAction,
-        type: activeTool as any,
-        start: normalizePoint(startPoint.current, width, height),
-        end: normalizePoint(lastPoint.current, width, height),
-      };
+      action = { ...baseAction, type: 'freehand', brushType, points: freehandPoints.current.map(p => normalizePoint(p, width, height)) };
+    } else if (startPoint.current && lastPoint.current) {
+       action = { ...baseAction, type: activeTool as any, start: normalizePoint(startPoint.current, width, height), end: normalizePoint(lastPoint.current, width, height) };
     }
 
     if (action) {
       if (activeTool === 'freehand' && brushType === 'laser') {
-        // 激光笔：加入动画队列
-        lasersRef.current.push({
-          action: action,
-          startTime: Date.now()
-        });
+        lasersRef.current.push({ action, startTime: Date.now() });
+        network.sendDrawAction(roomId, action);
       } else {
-        // 其他：本地乐观绘制 (需要传入宽高)
+        actionsRef.current.set(action.id, action);
+        network.sendDrawAction(roomId, action);
         const mainCtx = mainCanvasRef.current!.getContext('2d')!;
         renderAction(mainCtx, action, width, height); 
       }
-      
-      network.sendDrawAction(roomId, action);
     }
-
-    startPoint.current = null;
-    lastPoint.current = null;
-    freehandPoints.current = [];
+    startPoint.current = null; lastPoint.current = null; freehandPoints.current = [];
   };
 
-  // --- 动态计算光标样式 ---
-  const getCursorStyle = () => {
-    if (activeTool === 'freehand') {
-      return brushType === 'eraser' ? 'cursor-cell' : 'cursor-crosshair';
-    }
-    return 'cursor-crosshair';
-  };
+  const getCursorStyle = () => activeTool === 'freehand' && brushType === 'eraser' ? 'cursor-cell' : 'cursor-crosshair';
 
   return (
-    <div 
-      ref={containerRef} 
-      className={`relative w-full h-full touch-none overflow-hidden ${getCursorStyle()}`}
-    >
+    <div ref={containerRef} className={`relative w-full h-full touch-none overflow-hidden ${getCursorStyle()}`}>
       <canvas ref={mainCanvasRef} className="absolute top-0 left-0 w-full h-full pointer-events-none" />
       <canvas 
         ref={previewCanvasRef} 
         className="absolute top-0 left-0 w-full h-full z-10"
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
+        onPointerDown={handlePointerDown} 
+        onPointerMove={handlePointerMove} 
+        onPointerUp={handlePointerUp} 
         onPointerOut={handlePointerUp}
       />
     </div>

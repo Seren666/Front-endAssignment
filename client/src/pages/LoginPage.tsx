@@ -1,10 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  ArrowRight, Palette, Lock, User, Hash, AlertCircle, 
-  PlusCircle, LogIn, Eye, EyeOff // ✨ 引入眼睛图标
-} from 'lucide-react';
+import { ArrowRight, Palette, Lock, User, Hash, AlertCircle, PlusCircle, LogIn, Loader2, Eye, EyeOff } from 'lucide-react';
 import classNames from 'classnames';
+import { network } from '../services/socket';
 
 export const LoginPage = () => {
   const navigate = useNavigate();
@@ -13,14 +11,53 @@ export const LoginPage = () => {
   const [username, setUsername] = useState('');
   const [roomId, setRoomId] = useState('');
   const [password, setPassword] = useState('');
-  const [errorMsg, setErrorMsg] = useState('');
-
-  // ✨ 新增：控制密码是否可见
   const [showPassword, setShowPassword] = useState(false);
+  
+  const [errorMsg, setErrorMsg] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     document.title = 'CollabCanvas - 入口';
   }, []);
+
+  // 监听 Socket 反馈
+  useEffect(() => {
+    const socket = network.socket;
+
+    // ✨✨✨ 修复点 1：接收 data 参数 (里面有后端发来的 state) ✨✨✨
+    const handleJoined = (data: any) => {
+      setIsLoading(false);
+      
+      sessionStorage.setItem('collab_room_id', roomId);
+      sessionStorage.setItem('collab_username', username);
+      sessionStorage.setItem('collab_password', password); 
+
+      navigate('/board', { 
+        state: { 
+          username, 
+          roomId, 
+          password,
+          mode: isCreating ? 'create' : 'join',
+          joined: true,
+          // ✨✨✨ 修复点 2：把 state 打包带走，传给下一页 ✨✨✨
+          initialState: data.state 
+        } 
+      });
+    };
+
+    const handleError = (error: { code: string; message: string }) => {
+      setIsLoading(false);
+      setErrorMsg(error.message || '连接失败，请重试');
+    };
+
+    socket.on('room:joined', handleJoined);
+    socket.on('room:join:error', handleError);
+
+    return () => {
+      socket.off('room:joined', handleJoined);
+      socket.off('room:join:error', handleError);
+    };
+  }, [navigate, username, roomId, password, isCreating]);
 
   const validatePassword = (pwd: string) => {
     const regex = /^[a-zA-Z0-9!@#$%^&*]{6}$/;
@@ -41,14 +78,8 @@ export const LoginPage = () => {
       return;
     }
 
-    navigate('/board', { 
-      state: { 
-        username, 
-        roomId, 
-        password,
-        mode: isCreating ? 'create' : 'join' 
-      } 
-    });
+    setIsLoading(true);
+    network.joinRoom(roomId, username, password, isCreating ? 'create' : 'join');
   };
 
   return (
@@ -71,12 +102,14 @@ export const LoginPage = () => {
 
         <div className="flex bg-gray-100 p-1 rounded-xl mb-6">
           <button 
+            type="button"
             className={classNames("flex-1 py-2 text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2", !isCreating ? "bg-white text-blue-600 shadow-sm" : "text-gray-500 hover:text-gray-700")}
             onClick={() => { setIsCreating(false); setErrorMsg(''); }}
           >
             <LogIn size={16}/> 加入房间
           </button>
           <button 
+            type="button"
             className={classNames("flex-1 py-2 text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2", isCreating ? "bg-white text-blue-600 shadow-sm" : "text-gray-500 hover:text-gray-700")}
             onClick={() => { setIsCreating(true); setErrorMsg(''); }}
           >
@@ -86,7 +119,6 @@ export const LoginPage = () => {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           
-          {/* 1. 房间号 */}
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1">
               {isCreating ? '设置新房间号' : '输入房间号'}
@@ -95,32 +127,30 @@ export const LoginPage = () => {
               <Hash size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
+                disabled={isLoading}
                 value={roomId}
                 onChange={(e) => setRoomId(e.target.value)}
                 placeholder={isCreating ? "例如: My-Project-01" : "例如: 1024"}
-                className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all bg-gray-50 focus:bg-white"
+                className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all bg-gray-50 focus:bg-white disabled:bg-gray-100"
               />
             </div>
           </div>
 
-          {/* 2. 昵称 */}
           <div>
-            <label className="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1">
-              您的昵称
-            </label>
+            <label className="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1">昵称</label>
             <div className="relative">
               <User size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
+                disabled={isLoading}
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="例如: 设计师小王"
-                className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all bg-gray-50 focus:bg-white"
+                placeholder="例如: Jack"
+                className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all bg-gray-50 focus:bg-white disabled:bg-gray-100"
               />
             </div>
           </div>
 
-          {/* 3. 密码 (含眼睛按钮) */}
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase mb-1 ml-1">
               {isCreating ? '设置访问密码' : '输入房间密码'}
@@ -128,26 +158,23 @@ export const LoginPage = () => {
             <div className="relative">
               <Lock size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
-                // ✨ 动态切换 type
                 type={showPassword ? "text" : "password"}
+                disabled={isLoading}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="请输入6位密码"
-                className="w-full pl-10 pr-12 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all bg-gray-50 focus:bg-white font-mono tracking-widest"
+                className="w-full pl-10 pr-12 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all bg-gray-50 focus:bg-white font-mono tracking-widest disabled:bg-gray-100"
                 maxLength={6}
               />
-              
-              {/* ✨ 眼睛按钮 */}
               <button
-                type="button" // 必须写 type="button"，否则会触发表单提交
+                type="button"
                 onClick={() => setShowPassword(!showPassword)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-blue-600 transition-colors"
-                tabIndex={-1} // 防止 tab 键误触
+                tabIndex={-1}
               >
                 {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
-            
             <div className="mt-2 p-2 bg-gray-50 rounded border border-gray-100 text-[10px] text-gray-500 leading-tight">
               <p>密码规则：</p>
               <ul className="list-disc list-inside ml-1">
@@ -166,10 +193,19 @@ export const LoginPage = () => {
 
           <button
             type="submit"
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition-all flex items-center justify-center gap-2 group shadow-lg shadow-blue-200 mt-6"
+            disabled={isLoading}
+            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-bold py-3 rounded-xl transition-all flex items-center justify-center gap-2 group shadow-lg shadow-blue-200 mt-6"
           >
-            {isCreating ? '立即创建并进入' : '验证并加入'}
-            <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
+            {isLoading ? (
+              <>
+                <Loader2 size={20} className="animate-spin" /> 正在验证...
+              </>
+            ) : (
+              <>
+                {isCreating ? '立即创建' : '验证并加入'}
+                <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
+              </>
+            )}
           </button>
         </form>
       </div>
