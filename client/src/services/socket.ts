@@ -62,8 +62,8 @@ class NetworkMgr {
   }
 
   /** 更新光标位置 (会节流，但这由调用者控制，这里只负责发) */
-  public sendCursor(roomId: string, position: Point) {
-    this.socket.emit('cursor:update', { roomId, position });
+  public sendCursor(roomId: string, position: Point,pageId:string) {
+    this.socket.emit('cursor:update', { roomId, position,pageId});
   }
 }
 
