@@ -4,7 +4,7 @@ import { CanvasLayer } from '../components/CanvasLayer/CanvasLayer';
 import { Toolbar } from '../components/Toolbar/Toolbar';
 import type { DrawActionType, BrushType, PageId, Page } from '../shared/protocol';
 import { network } from '../services/socket';
-import { File, Plus, LogOut, X, ChevronDown, Check, ChevronLeft, ChevronRight } from 'lucide-react';
+import { File, Plus, LogOut, X, ChevronDown, Check, ChevronLeft, ChevronRight, AlertTriangle } from 'lucide-react'; // ✨ 新增 AlertTriangle
 import classNames from 'classnames';
 
 export const BoardPage = () => {
@@ -41,6 +41,11 @@ export const BoardPage = () => {
   const [pages, setPages] = useState<Page[]>([{ id: 'page-1', name: '画布 1' }]);
   const [activePage, setActivePage] = useState<PageId>('page-1');
   const [showPageMenu, setShowPageMenu] = useState(false);
+
+  // ✨✨✨ 新增：删除确认相关的状态 ✨✨✨
+  const [pendingDeletePageId, setPendingDeletePageId] = useState<string | null>(null); // 正准备删哪个？
+  const [ignoreDeleteConfirm, setIgnoreDeleteConfirm] = useState(false); // 是否不再提示？
+  const [tempCheckboxState, setTempCheckboxState] = useState(false); // 弹窗里那个勾选框的临时状态
 
   useEffect(() => {
     if(boardName) document.title = `${boardName} - CollabCanvas`; 
@@ -127,22 +132,47 @@ export const BoardPage = () => {
     };
   }, [roomId, username, password, navigate, alreadyJoined, initialState]); 
 
-  // --- 5. 操作 ---
+  // --- 5. 操作逻辑 ---
   const handleAddPage = () => network.socket.emit('page:create', { roomId });
 
-  const handleDeletePage = (e: React.MouseEvent, pageId: string) => {
+  // 🗑️ 点击删除按钮触发的逻辑
+  const handleDeletePageClick = (e: React.MouseEvent, pageId: string) => {
     e.stopPropagation();
     if (pages.length <= 1) {
       alert("至少保留一个画布！");
       return;
     }
-    if (window.confirm("确定要删除这个画布吗？所有内容将丢失！")) {
-      if (activePage === pageId) {
-        const index = pages.findIndex(p => p.id === pageId);
-        const prevIndex = index > 0 ? index - 1 : 0;
-        setActivePage(pages[prevIndex].id);
+
+    // ✨ 检查是否开启了“不再提示”
+    if (ignoreDeleteConfirm) {
+      // 直接执行删除
+      executeDelete(pageId);
+    } else {
+      // 打开弹窗，让用户确认
+      setPendingDeletePageId(pageId);
+      setTempCheckboxState(false); // 每次打开弹窗默认不勾选
+    }
+  };
+
+  // ⚙️ 真正的删除执行函数
+  const executeDelete = (pageId: string) => {
+    if (activePage === pageId) {
+      const index = pages.findIndex(p => p.id === pageId);
+      const prevIndex = index > 0 ? index - 1 : 0;
+      setActivePage(pages[prevIndex].id);
+    }
+    network.socket.emit('page:delete', { roomId, pageId });
+  };
+
+  // ✅ 弹窗确认逻辑
+  const confirmDelete = () => {
+    if (pendingDeletePageId) {
+      // 如果用户勾选了“不再提示”，更新状态
+      if (tempCheckboxState) {
+        setIgnoreDeleteConfirm(true);
       }
-      network.socket.emit('page:delete', { roomId, pageId });
+      executeDelete(pendingDeletePageId);
+      setPendingDeletePageId(null); // 关闭弹窗
     }
   };
 
@@ -167,10 +197,7 @@ export const BoardPage = () => {
         backgroundSize: '30px 30px'
       }}
     >
-      {/* 🔴 关键修复：z-index 设高，移除 overflow-hidden，改为 visible 或默认 */}
       <header className="h-12 bg-white/80 backdrop-blur-md border-b border-gray-200/50 flex items-center px-4 justify-between z-50 shadow-sm relative">
-        
-        {/* 左侧 */}
         <div className="flex items-center gap-2 min-w-[150px]">
           <button onClick={handleLogout} className="text-gray-500 hover:text-red-500 mr-2 transition-colors" title="退出">
             <LogOut size={18} />
@@ -189,11 +216,8 @@ export const BoardPage = () => {
           </span>
         </div>
         
-        {/* ✨ 中间：Tabs 容器 (关键修复：min-w-0 允许收缩，但去掉 overflow-hidden) */}
         <div className="flex-1 flex justify-center items-center gap-2 mx-2 min-w-0">
           <div className="flex items-center bg-gray-100/80 p-1 rounded-lg gap-1 max-w-full relative">
-            
-            {/* 左箭头 */}
             <button 
               className="p-1 text-gray-400 hover:text-blue-600 hover:bg-white rounded transition-colors active:scale-95 flex-shrink-0"
               onMouseDown={() => startScrolling('left')}
@@ -203,7 +227,6 @@ export const BoardPage = () => {
               <ChevronLeft size={16} />
             </button>
 
-            {/* 滚动区域：这里必须有 overflow-x-hidden 来裁剪 Tab */}
             <div 
               ref={scrollContainerRef}
               className="flex gap-1 overflow-x-hidden max-w-[40vw] scroll-smooth"
@@ -227,7 +250,8 @@ export const BoardPage = () => {
                   
                   {pages.length > 1 && (
                     <button 
-                      onClick={(e) => handleDeletePage(e, page.id)}
+                      // 🔴 修改：这里调用新的处理函数
+                      onClick={(e) => handleDeletePageClick(e, page.id)}
                       className={classNames(
                         "rounded p-0.5 transition-all flex-shrink-0",
                         activePage === page.id ? "hover:bg-red-100 hover:text-red-500 text-gray-300" : "opacity-0 group-hover:opacity-100 hover:bg-red-100 hover:text-red-500"
@@ -240,7 +264,6 @@ export const BoardPage = () => {
               ))}
             </div>
 
-            {/* 右箭头 */}
             <button 
               className="p-1 text-gray-400 hover:text-blue-600 hover:bg-white rounded transition-colors active:scale-95 flex-shrink-0"
               onMouseDown={() => startScrolling('right')}
@@ -252,7 +275,6 @@ export const BoardPage = () => {
 
             <div className="w-[1px] h-4 bg-gray-300 mx-1 flex-shrink-0"></div>
 
-            {/* 添加 */}
             <button 
               onClick={handleAddPage}
               className="px-2 py-1.5 hover:bg-white/80 hover:text-blue-600 rounded text-gray-500 transition-colors flex-shrink-0"
@@ -260,7 +282,6 @@ export const BoardPage = () => {
               <Plus size={16}/>
             </button>
 
-            {/* 👇 下拉菜单 (确保显示) 👇 */}
             {pages.length > 7 && (
               <div className="relative flex-shrink-0">
                 <button 
@@ -270,7 +291,6 @@ export const BoardPage = () => {
                   <ChevronDown size={16} />
                 </button>
 
-                {/* 菜单本体：绝对定位，z-index 极高 */}
                 {showPageMenu && (
                   <>
                     <div className="fixed inset-0 z-[9998]" onClick={() => setShowPageMenu(false)} />
@@ -302,7 +322,6 @@ export const BoardPage = () => {
           </div>
         </div>
 
-        {/* 右侧 */}
         <div className="flex items-center justify-end min-w-[150px]">
           <div className="text-xs text-gray-500 px-2 py-1 rounded select-none bg-gray-100/50 border border-gray-200/50 truncate max-w-[120px]">
             {username}
@@ -336,6 +355,50 @@ export const BoardPage = () => {
           initialState={initialState} 
         />
       </main>
+
+      {/* ✨✨✨ 自定义删除确认弹窗 ✨✨✨ */}
+      {pendingDeletePageId && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/20 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm border border-gray-100 transform scale-100 animate-in zoom-in-95 duration-200">
+            <div className="flex flex-col items-center text-center gap-3">
+              <div className="w-12 h-12 bg-red-100 text-red-500 rounded-full flex items-center justify-center mb-1">
+                <AlertTriangle size={24} />
+              </div>
+              <h3 className="text-lg font-bold text-gray-800">确认删除画布？</h3>
+              <p className="text-sm text-gray-500">
+                此操作将永久删除该画布上的所有内容，且<span className="font-bold text-red-500">无法恢复</span>。
+              </p>
+              
+              {/* 复选框：不再提示 */}
+              <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer mt-2 hover:text-gray-800 select-none">
+                <input 
+                  type="checkbox" 
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-4 h-4"
+                  checked={tempCheckboxState}
+                  onChange={(e) => setTempCheckboxState(e.target.checked)}
+                />
+                在此房间内不再提示
+              </label>
+
+              <div className="flex gap-3 w-full mt-4">
+                <button 
+                  onClick={() => setPendingDeletePageId(null)}
+                  className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 font-medium hover:bg-gray-50 transition-colors"
+                >
+                  取消
+                </button>
+                <button 
+                  onClick={confirmDelete}
+                  className="flex-1 py-2.5 rounded-xl bg-red-500 text-white font-medium hover:bg-red-600 shadow-lg shadow-red-200 transition-colors"
+                >
+                  确认删除
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };
