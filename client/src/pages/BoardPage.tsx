@@ -4,7 +4,7 @@ import { CanvasLayer } from '../components/CanvasLayer/CanvasLayer';
 import { Toolbar } from '../components/Toolbar/Toolbar';
 import type { DrawActionType, BrushType, PageId, Page } from '../shared/protocol';
 import { network } from '../services/socket';
-import { File, Plus, LogOut, X, ChevronDown, Check, ChevronLeft, ChevronRight, AlertTriangle } from 'lucide-react'; // ✨ 新增 AlertTriangle
+import { File, Plus, LogOut, X, ChevronDown, Check, ChevronLeft, ChevronRight, AlertTriangle, Trash2 } from 'lucide-react';
 import classNames from 'classnames';
 
 export const BoardPage = () => {
@@ -42,10 +42,14 @@ export const BoardPage = () => {
   const [activePage, setActivePage] = useState<PageId>('page-1');
   const [showPageMenu, setShowPageMenu] = useState(false);
 
-  // ✨✨✨ 新增：删除确认相关的状态 ✨✨✨
-  const [pendingDeletePageId, setPendingDeletePageId] = useState<string | null>(null); // 正准备删哪个？
-  const [ignoreDeleteConfirm, setIgnoreDeleteConfirm] = useState(false); // 是否不再提示？
-  const [tempCheckboxState, setTempCheckboxState] = useState(false); // 弹窗里那个勾选框的临时状态
+  // --- 弹窗状态管理 ---
+  const [pendingDeletePageId, setPendingDeletePageId] = useState<string | null>(null);
+  const [ignoreDeleteConfirm, setIgnoreDeleteConfirm] = useState(false);
+  const [tempDeleteCheckbox, setTempDeleteCheckbox] = useState(false);
+
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [ignoreClearConfirm, setIgnoreClearConfirm] = useState(false);
+  const [tempClearCheckbox, setTempClearCheckbox] = useState(false);
 
   useEffect(() => {
     if(boardName) document.title = `${boardName} - CollabCanvas`; 
@@ -135,26 +139,20 @@ export const BoardPage = () => {
   // --- 5. 操作逻辑 ---
   const handleAddPage = () => network.socket.emit('page:create', { roomId });
 
-  // 🗑️ 点击删除按钮触发的逻辑
   const handleDeletePageClick = (e: React.MouseEvent, pageId: string) => {
     e.stopPropagation();
     if (pages.length <= 1) {
       alert("至少保留一个画布！");
       return;
     }
-
-    // ✨ 检查是否开启了“不再提示”
     if (ignoreDeleteConfirm) {
-      // 直接执行删除
       executeDelete(pageId);
     } else {
-      // 打开弹窗，让用户确认
       setPendingDeletePageId(pageId);
-      setTempCheckboxState(false); // 每次打开弹窗默认不勾选
+      setTempDeleteCheckbox(false);
     }
   };
 
-  // ⚙️ 真正的删除执行函数
   const executeDelete = (pageId: string) => {
     if (activePage === pageId) {
       const index = pages.findIndex(p => p.id === pageId);
@@ -164,20 +162,34 @@ export const BoardPage = () => {
     network.socket.emit('page:delete', { roomId, pageId });
   };
 
-  // ✅ 弹窗确认逻辑
   const confirmDelete = () => {
     if (pendingDeletePageId) {
-      // 如果用户勾选了“不再提示”，更新状态
-      if (tempCheckboxState) {
-        setIgnoreDeleteConfirm(true);
-      }
+      if (tempDeleteCheckbox) setIgnoreDeleteConfirm(true);
       executeDelete(pendingDeletePageId);
-      setPendingDeletePageId(null); // 关闭弹窗
+      setPendingDeletePageId(null);
     }
   };
 
+  const handleClearClick = () => {
+    if (ignoreClearConfirm) {
+      executeClear();
+    } else {
+      setShowClearConfirm(true);
+      setTempClearCheckbox(false);
+    }
+  };
+
+  const executeClear = () => {
+    network.socket.emit('board:clear', { roomId, pageId: activePage });
+  };
+
+  const confirmClear = () => {
+    if (tempClearCheckbox) setIgnoreClearConfirm(true);
+    executeClear();
+    setShowClearConfirm(false);
+  };
+
   const handleUndo = () => network.socket.emit('action:undo', { roomId, userId: network.socket.id || '' });
-  const handleClear = () => network.socket.emit('board:clear', { roomId, pageId: activePage });
 
   const handleLogout = () => {
     if(window.confirm("确定要退出房间吗？")) {
@@ -250,7 +262,6 @@ export const BoardPage = () => {
                   
                   {pages.length > 1 && (
                     <button 
-                      // 🔴 修改：这里调用新的处理函数
                       onClick={(e) => handleDeletePageClick(e, page.id)}
                       className={classNames(
                         "rounded p-0.5 transition-all flex-shrink-0",
@@ -341,7 +352,7 @@ export const BoardPage = () => {
             strokeWidth={currentStrokeWidth}
             onStrokeWidthChange={handleStrokeWidthChange}
             onUndo={handleUndo}
-            onClear={handleClear}
+            onClear={handleClearClick}
           />
         </div>
 
@@ -356,7 +367,7 @@ export const BoardPage = () => {
         />
       </main>
 
-      {/* ✨✨✨ 自定义删除确认弹窗 ✨✨✨ */}
+      {/* 弹窗 A: 删除画布确认 */}
       {pendingDeletePageId && (
         <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/20 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm border border-gray-100 transform scale-100 animate-in zoom-in-95 duration-200">
@@ -365,17 +376,17 @@ export const BoardPage = () => {
                 <AlertTriangle size={24} />
               </div>
               <h3 className="text-lg font-bold text-gray-800">确认删除画布？</h3>
-              <p className="text-sm text-gray-500">
-                此操作将永久删除该画布上的所有内容，且<span className="font-bold text-red-500">无法恢复</span>。
-              </p>
+              <div className="text-sm text-gray-500 flex flex-col gap-1">
+                <span>此操作将永久删除该画布上的所有内容</span>
+                <span className="font-bold text-red-500">且无法恢复</span>
+              </div>
               
-              {/* 复选框：不再提示 */}
               <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer mt-2 hover:text-gray-800 select-none">
                 <input 
                   type="checkbox" 
                   className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-4 h-4"
-                  checked={tempCheckboxState}
-                  onChange={(e) => setTempCheckboxState(e.target.checked)}
+                  checked={tempDeleteCheckbox}
+                  onChange={(e) => setTempDeleteCheckbox(e.target.checked)}
                 />
                 在此房间内不再提示
               </label>
@@ -392,6 +403,49 @@ export const BoardPage = () => {
                   className="flex-1 py-2.5 rounded-xl bg-red-500 text-white font-medium hover:bg-red-600 shadow-lg shadow-red-200 transition-colors"
                 >
                   确认删除
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 弹窗 B: 清空画布确认 (✨ 已修改：文字双行居中，红色字体) */}
+      {showClearConfirm && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/20 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm border border-gray-100 transform scale-100 animate-in zoom-in-95 duration-200">
+            <div className="flex flex-col items-center text-center gap-3">
+              <div className="w-12 h-12 bg-orange-100 text-orange-500 rounded-full flex items-center justify-center mb-1">
+                <Trash2 size={24} />
+              </div>
+              <h3 className="text-lg font-bold text-gray-800">清空当前画布？</h3>
+              <div className="text-sm text-gray-500 flex flex-col gap-1">
+                <span>该行为将清除当前画布上的所有内容</span>
+                <span className="font-bold text-red-500">其他用户的绘制也会被清空</span>
+              </div>
+              
+              <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer mt-2 hover:text-gray-800 select-none">
+                <input 
+                  type="checkbox" 
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-4 h-4"
+                  checked={tempClearCheckbox}
+                  onChange={(e) => setTempClearCheckbox(e.target.checked)}
+                />
+                在此房间内不再提示
+              </label>
+
+              <div className="flex gap-3 w-full mt-4">
+                <button 
+                  onClick={() => setShowClearConfirm(false)}
+                  className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 font-medium hover:bg-gray-50 transition-colors"
+                >
+                  取消
+                </button>
+                <button 
+                  onClick={confirmClear}
+                  className="flex-1 py-2.5 rounded-xl bg-orange-500 text-white font-medium hover:bg-orange-600 shadow-lg shadow-orange-200 transition-colors"
+                >
+                  立即清空
                 </button>
               </div>
             </div>

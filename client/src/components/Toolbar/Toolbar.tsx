@@ -6,7 +6,7 @@ import {
   Diamond, Hexagon, Eraser, 
   SlidersHorizontal 
 } from 'lucide-react';
-import type{ DrawActionType, BrushType } from '../../shared/protocol';
+import type { DrawActionType, BrushType } from '../../shared/protocol';
 
 interface ToolbarProps {
   activeTool: DrawActionType;
@@ -37,10 +37,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   const [showShapePanel, setShowShapePanel] = useState(false);
   const [showBrushPanel, setShowBrushPanel] = useState(false);
 
-  // ✨ 定义 isEraser 变量 (这就是你要找的 "最开头定义")
   const isEraser = activeTool === 'freehand' && brushType === 'eraser';
 
-  // 按钮通用样式
   const btnClass = (isActive: boolean) => classNames(
     "p-3 rounded-xl transition-all duration-200 flex items-center justify-center relative group cursor-pointer",
     isActive 
@@ -50,18 +48,15 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
   return (
     <div className="flex gap-4 items-start">
-      
-      {/* --- 左侧主工具栏 --- */}
       <div className="flex flex-col gap-2 bg-white/90 backdrop-blur-sm p-2 rounded-2xl shadow-xl border border-gray-100/50 pointer-events-auto">
         
-        {/* 1. 画笔工具 */}
+        {/* 1. 画笔 */}
         <div className="relative">
           <button 
             className={btnClass(activeTool === 'freehand' && !isEraser)}
             onClick={() => {
               onToolChange('freehand');
               if (brushType === 'eraser') onBrushChange('pencil');
-              
               setShowBrushPanel(!showBrushPanel);
               setShowShapePanel(false);
               setShowColorPanel(false);
@@ -75,14 +70,13 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           </button>
         </div>
 
-        {/* 2. 橡皮擦工具 */}
+        {/* 2. 橡皮擦 */}
         <div className="relative">
           <button 
             className={btnClass(isEraser)}
             onClick={() => {
               onToolChange('freehand');
               onBrushChange('eraser');
-              // 自动打开大小调节
               setShowColorPanel(true); 
               setShowBrushPanel(false);
               setShowShapePanel(false);
@@ -93,7 +87,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           </button>
         </div>
 
-        {/* 3. 形状工具 */}
+        {/* 3. 形状 */}
         <div className="relative">
           <button 
             className={btnClass(['rect', 'ellipse', 'triangle', 'star', 'arrow', 'diamond', 'pentagon', 'hexagon'].includes(activeTool))}
@@ -122,7 +116,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
         <div className="w-8 h-[1px] bg-gray-200 mx-auto my-1" />
 
-        {/* 4. 样式设置 */}
+        {/* 4. 样式 */}
         <button 
           className={btnClass(showColorPanel)}
           style={{ color: isEraser ? undefined : color }} 
@@ -141,10 +135,10 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           <Undo2 size={20} />
         </button>
 
-        {/* 6. 清屏 */}
+        {/* 6. 清屏 (已移除 window.confirm，直接调用 onClear) */}
         <button 
           className={classNames(btnClass(false), "hover:text-red-500 hover:bg-red-50")} 
-          onClick={() => { if(window.confirm('确定要清空画布吗？')) onClear(); }}
+          onClick={onClear} 
           title="清空画布"
         >
           <Trash2 size={20} />
@@ -152,7 +146,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       </div>
 
       {/* --- 二级菜单 --- */}
-      
       {showBrushPanel && activeTool === 'freehand' && !isEraser && (
         <div className="flex flex-col gap-2 bg-white p-3 rounded-xl shadow-xl border border-gray-100 animate-in fade-in slide-in-from-left-4 pointer-events-auto">
           <span className="text-xs font-bold text-gray-400 px-1">笔刷</span>
@@ -201,11 +194,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({
             </div>
             <div className="flex items-center gap-2">
               <Minus size={12} className="text-gray-400"/>
-              {/* ✨ 动态滑块上限 */}
               <input 
-                type="range" 
-                min="1" 
-                max={isEraser ? "100" : "20"} 
+                type="range" min="1" max={isEraser ? "100" : "20"} 
                 value={strokeWidth}
                 onChange={(e) => onStrokeWidthChange(Number(e.target.value))}
                 className="w-full h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
