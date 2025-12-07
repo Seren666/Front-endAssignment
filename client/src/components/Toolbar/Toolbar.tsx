@@ -4,7 +4,7 @@ import {
   Pencil, Square, Circle, Triangle, Star, MoveRight, 
   Undo2, Trash2, Palette, Minus, Highlighter,
   Diamond, Hexagon, Eraser, 
-  SlidersHorizontal 
+  SlidersHorizontal, MousePointer2 
 } from 'lucide-react';
 import type { DrawActionType, BrushType } from '../../shared/protocol';
 
@@ -46,10 +46,43 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       : "bg-white text-gray-500 hover:bg-gray-50 hover:text-blue-600 border border-gray-100"
   );
 
+  // 辅助函数：根据当前工具决定显示什么形状图标
+  const renderShapeIcon = () => {
+    switch (activeTool) {
+      case 'ellipse': return <Circle size={20} />;
+      case 'triangle': return <Triangle size={20} />;
+      case 'star': return <Star size={20} />;
+      case 'arrow': return <MoveRight size={20} />;
+      case 'diamond': return <Diamond size={20} />;
+      case 'pentagon':
+      case 'hexagon': return <Hexagon size={20} />;
+      // 对于 rect, freehand, select 以及其他情况，默认显示 Square
+      default: return <Square size={20} />;
+    }
+  };
+
   return (
     <div className="flex gap-4 items-start">
       <div className="flex flex-col gap-2 bg-white/90 backdrop-blur-sm p-2 rounded-2xl shadow-xl border border-gray-100/50 pointer-events-auto">
         
+        {/* 0. 选择工具 */}
+        <div className="relative">
+          <button 
+            className={btnClass(activeTool === 'select')}
+            onClick={() => {
+              onToolChange('select');
+              setShowBrushPanel(false);
+              setShowShapePanel(false);
+              setShowColorPanel(false);
+            }}
+            title="选择工具 (框选移动)"
+          >
+            <MousePointer2 size={20} style={{ transform: 'rotate(-45deg)' }} /> 
+          </button>
+        </div>
+
+        <div className="w-8 h-[1px] bg-gray-200 mx-auto my-1" />
+
         {/* 1. 画笔 */}
         <div className="relative">
           <button 
@@ -87,7 +120,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           </button>
         </div>
 
-        {/* 3. 形状 */}
+        {/* 3. 形状 (已修复：增加默认显示) */}
         <div className="relative">
           <button 
             className={btnClass(['rect', 'ellipse', 'triangle', 'star', 'arrow', 'diamond', 'pentagon', 'hexagon'].includes(activeTool))}
@@ -101,16 +134,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
             }}
             title="形状工具"
           >
-            {activeTool === 'rect' && <Square size={20} />}
-            {activeTool === 'ellipse' && <Circle size={20} />}
-            {activeTool === 'triangle' && <Triangle size={20} />}
-            {activeTool === 'star' && <Star size={20} />}
-            {activeTool === 'arrow' && <MoveRight size={20} />}
-            {activeTool === 'diamond' && <Diamond size={20} />}
-            {activeTool === 'pentagon' && <Hexagon size={20} />}
-            {activeTool === 'hexagon' && <Hexagon size={20} />}
-            {/* 默认 */}
-            {activeTool === 'freehand' && <Square size={20} />} 
+            {renderShapeIcon()}
           </button>
         </div>
 
@@ -135,7 +159,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           <Undo2 size={20} />
         </button>
 
-        {/* 6. 清屏 (已移除 window.confirm，直接调用 onClear) */}
+        {/* 6. 清屏 */}
         <button 
           className={classNames(btnClass(false), "hover:text-red-500 hover:bg-red-50")} 
           onClick={onClear} 
@@ -161,7 +185,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         </div>
       )}
 
-      {showShapePanel && activeTool !== 'freehand' && (
+      {showShapePanel && activeTool !== 'freehand' && activeTool !== 'select' && (
         <div className="grid grid-cols-4 gap-2 bg-white p-3 rounded-xl shadow-xl border border-gray-100 animate-in fade-in slide-in-from-left-4 pointer-events-auto w-72">
           <span className="col-span-4 text-xs font-bold text-gray-400 px-1">形状</span>
           {[

@@ -10,8 +10,8 @@ import {
   User, 
   RoomId 
 } from './shared/protocol'; 
-import { nanoid } from 'nanoid'; 
 
+// 简单的 ID 生成器 (用于 PageID)
 const generatePageId = () => 'page-' + Math.random().toString(36).substr(2, 9);
 
 const app = express();
@@ -19,13 +19,15 @@ app.use(cors());
 
 const server = http.createServer(app);
 
+// 初始化 Socket.io
 const io = new Server<ClientToServerEvents, ServerToClientEvents>(server, {
   cors: {
-    origin: "*", 
+    origin: "*", // 允许跨域
     methods: ["GET", "POST"]
   }
 });
 
+// --- 内存数据库 ---
 const rooms = new Map<RoomId, RoomState>();
 
 io.on('connection', (socket) => {
@@ -35,37 +37,45 @@ io.on('connection', (socket) => {
   socket.on('room:join', ({ roomId, userName, password, action }) => {
     let room = rooms.get(roomId);
 
+    // --- 分支 A: 创建房间 ---
     if (action === 'create') {
       if (room) {
-        socket.emit('room:join:error', { roomId, code: '409', message: '房间号已被占用' });
+        socket.emit('room:join:error', { roomId, code: '409', message: '房间号已被占用，请更换' });
         return;
       }
-      console.log(`✨ 创建新房间: ${roomId}`);
+
+      console.log(`✨ 创建新房间: ${roomId} (密码: ${password || '无'})`);
       const newRoom: RoomState = {
         id: roomId,
         password: password,
         users: {},
         actions: {},
         actionOrder: [],
-        // ✨ 初始化：默认有一页
+        // 默认第一页
         pages: [{ id: 'page-1', name: '画布 1' }],
         createdAt: Date.now(),
         userUndoStacks: {}
       };
       rooms.set(roomId, newRoom);
       room = newRoom;
-    } else {
+    } 
+    
+    // --- 分支 B: 加入房间 ---
+    else {
       if (!room) {
-        socket.emit('room:join:error', { roomId, code: '404', message: '房间不存在' });
+        socket.emit('room:join:error', { roomId, code: '404', message: '房间不存在，请先创建' });
         return;
       }
+
       if (room.password && room.password !== password) {
-        socket.emit('room:join:error', { roomId, code: '401', message: '密码错误' });
+        console.log(`🔒 ${userName} 加入 ${roomId} 失败: 密码错误`);
+        socket.emit('room:join:error', { roomId, code: '401', message: '房间密码错误' });
         return;
       }
     }
 
     if (!room) return;
+
     socket.join(roomId);
 
     const newUser: User = {
@@ -76,78 +86,150 @@ io.on('connection', (socket) => {
     };
 
     room.users[socket.id] = newUser;
-    if (!room.userUndoStacks[socket.id]) room.userUndoStacks[socket.id] = [];
+    if (!room.userUndoStacks[socket.id]) {
+      room.userUndoStacks[socket.id] = [];
+    }
 
-    // 发送包括 pages 在内的完整状态
-    socket.emit('room:joined', { roomId, self: newUser, state: room });
-    socket.to(roomId).emit('room:user-joined', { roomId, user: newUser });
-    console.log(`✅ ${userName} 进入 ${roomId}`);
+    // 发送完整状态 (包含 actions 和 pages)
+    socket.emit('room:joined', {
+      roomId,
+      self: newUser,
+      state: room
+    });
+
+    socket.to(roomId).emit('room:user-joined', {
+      roomId,
+      user: newUser
+    });
+
+    console.log(`✅ ${userName} (${action === 'create' ? '创建' : '加入'}) 了 ${roomId}`);
   });
 
   // 2. 提交绘制
   socket.on('draw:commit', ({ roomId, action }) => {
     const room = rooms.get(roomId);
     if (!room) return;
-    const serverAction = { ...action, userId: socket.id, createdAt: Date.now() };
+
+    const serverAction: DrawAction = {
+      ...action,
+      userId: socket.id,
+      createdAt: Date.now()
+    };
+
     room.actions[serverAction.id] = serverAction;
     room.actionOrder.push(serverAction.id);
+
     socket.to(roomId).emit('draw:created', { roomId, action: serverAction });
   });
 
-  // 3. 撤销
+  // ✨✨✨ 3. 处理移动 (新增逻辑) ✨✨✨
+  socket.on('draw:moved', ({ roomId, actionIds, dx, dy }) => {
+    const room = rooms.get(roomId);
+    if (!room) return;
+
+    // 批量更新内存中的坐标
+    actionIds.forEach(id => {
+      const action = room.actions[id];
+      if (action && !action.isDeleted) {
+        // 根据类型更新坐标
+        if (action.type === 'freehand') {
+          action.points.forEach(p => {
+            p.x += dx;
+            p.y += dy;
+          });
+        } else {
+          // 形状 (利用 ts-ignore 忽略类型检查，因为我们知道形状一定有 start/end)
+          // @ts-ignore
+          action.start.x += dx;
+          // @ts-ignore
+          action.start.y += dy;
+          // @ts-ignore
+          action.end.x += dx;
+          // @ts-ignore
+          action.end.y += dy;
+        }
+      }
+    });
+
+    // 广播给其他人，让他们也看到移动效果
+    socket.to(roomId).emit('draw:moved', { roomId, actionIds, dx, dy });
+  });
+
+  // 4. 撤销
   socket.on('action:undo', ({ roomId, userId }) => {
     const room = rooms.get(roomId);
     if (!room) return;
+
     for (let i = room.actionOrder.length - 1; i >= 0; i--) {
       const actionId = room.actionOrder[i];
       const action = room.actions[actionId];
+
       if (action.userId === userId && !action.isDeleted) {
         action.isDeleted = true;
         room.userUndoStacks[userId].push(actionId);
-        io.to(roomId).emit('action:updatedDeleted', { roomId, actionId, isDeleted: true });
+
+        io.to(roomId).emit('action:updatedDeleted', {
+          roomId,
+          actionId,
+          isDeleted: true
+        });
+        console.log(`↩️ ${userId} 撤销了动作 ${actionId}`);
         break;
       }
     }
   });
 
-  // 4. 清屏
+  // 5. 清屏
   socket.on('board:clear', ({ roomId, pageId }) => {
     const room = rooms.get(roomId);
     if (!room) return;
+
+    console.log(`🗑️ 清空房间 ${roomId} 的页面 ${pageId}`);
+
     Object.values(room.actions).forEach(action => {
-      if (action.pageId === pageId) action.isDeleted = true;
+      if (action.pageId === pageId) {
+        action.isDeleted = true;
+      }
     });
+
     io.to(roomId).emit('board:cleared', { roomId, pageId });
   });
 
-  // 5. 光标同步
+  // 6. 光标同步
   socket.on('cursor:update', ({ roomId, position, pageId }) => {
-    socket.to(roomId).emit('cursor:updated', { roomId, userId: socket.id, position, pageId });
+    socket.to(roomId).emit('cursor:updated', { 
+      roomId, 
+      userId: socket.id, 
+      position, 
+      pageId 
+    });
   });
 
-  // 6. 离开
+  // 7. 主动离开
   socket.on('room:leave', ({ roomId }) => {
     const room = rooms.get(roomId);
     if (room && room.users[socket.id]) {
+      const name = room.users[socket.id].name;
       delete room.users[socket.id];
       socket.leave(roomId);
       socket.to(roomId).emit('room:user-left', { roomId, userId: socket.id });
+      console.log(`🚪 ${name} 主动离开了房间 ${roomId}`);
     }
   });
 
-  // 7. 断开连接
+  // 8. 断开连接
   socket.on('disconnect', () => {
     rooms.forEach((room, roomId) => {
       if (room.users[socket.id]) {
+        const name = room.users[socket.id].name;
         delete room.users[socket.id];
         socket.to(roomId).emit('room:user-left', { roomId, userId: socket.id });
+        console.log(`❌ ${name} 断开连接 (离开 ${roomId})`);
       }
     });
   });
 
-  // ✨✨✨ 8. 页面管理 ✨✨✨
-  
-  // 创建新页面
+  // 9. 页面管理: 创建
   socket.on('page:create', ({ roomId }) => {
     const room = rooms.get(roomId);
     if (!room) return;
@@ -161,22 +243,19 @@ io.on('connection', (socket) => {
     });
 
     console.log(`📄 房间 ${roomId} 新增页面: ${newPageId}`);
-    // 广播给所有人更新页面列表
     io.to(roomId).emit('page:updated', { roomId, pages: room.pages });
   });
 
-  // 删除页面
+  // 10. 页面管理: 删除
   socket.on('page:delete', ({ roomId, pageId }) => {
     const room = rooms.get(roomId);
     if (!room) return;
 
-    // 至少保留一页
     if (room.pages.length <= 1) return;
 
-    // 1. 从列表中移除
     room.pages = room.pages.filter(p => p.id !== pageId);
 
-    // 2. 清理该页面的所有画作 (软删除)
+    // 清理该页面的画作
     Object.values(room.actions).forEach(action => {
       if (action.pageId === pageId) {
         action.isDeleted = true;
@@ -184,7 +263,6 @@ io.on('connection', (socket) => {
     });
 
     console.log(`🗑️ 房间 ${roomId} 删除页面: ${pageId}`);
-    // 广播更新
     io.to(roomId).emit('page:updated', { roomId, pages: room.pages });
   });
 
@@ -192,5 +270,10 @@ io.on('connection', (socket) => {
 
 const PORT = 3000;
 server.listen(PORT, () => {
-  console.log(`🚀 后端服务已启动 (Port ${PORT})`);
+  console.log(`
+  🚀 后端服务已启动!
+  ---------------------------
+  Local: http://localhost:${PORT}
+  ---------------------------
+  `);
 });

@@ -1,12 +1,4 @@
-/**
- * 🚨 shared/protocol.ts
- * CollaBoard v1.4 最终版协议
- * * 变更日志:
- * - ... (v1.0 - v1.3)
- * - v1.4: 增加 Page 结构与多页管理事件
- */
-
-export const PROTOCOL_VERSION = '1.4.0';
+export const PROTOCOL_VERSION = '1.5.0';
 
 /* --- 基础类型 --- */
 export type RoomId = string;
@@ -19,14 +11,15 @@ export interface Point {
   y: number;
 }
 
-// ✨ 新增：页面结构
 export interface Page {
   id: PageId;
-  name: string; // 例如 "画布 1"
+  name: string;
 }
 
 /* --- 绘制动作 --- */
+// ✨ 新增 'select' 工具
 export type DrawActionType = 
+  | 'select' 
   | 'freehand' | 'rect' | 'ellipse' | 'arrow' | 'triangle' | 'star' 
   | 'diamond' | 'pentagon' | 'hexagon';
 
@@ -81,10 +74,7 @@ export interface RoomState {
   users: Record<UserId, User>;
   actions: Record<ActionId, DrawAction>;
   actionOrder: ActionId[];
-  
-  // ✨ 新增：房间里的页面列表
   pages: Page[]; 
-  
   createdAt: number;
   userUndoStacks: Record<UserId, ActionId[]>;
 }
@@ -96,14 +86,16 @@ export interface ErrorPayload {
 
 /* --- Socket.io 事件 --- */
 export interface ClientToServerEvents {
-  'room:join': (payload: { roomId: RoomId; userName: string; password?: string; action: 'create' | 'join' }) => void;
+  'room:join': (payload: { roomId: RoomId; userName: string; password?: string; action: 'create' | 'join'; persistentId?: string }) => void;
   'room:leave': (payload: { roomId: RoomId }) => void;
   'draw:commit': (payload: { roomId: RoomId; action: DrawAction }) => void;
+  
+  // ✨ 新增：移动图形事件
+  'draw:moved': (payload: { roomId: RoomId; actionIds: ActionId[]; dx: number; dy: number }) => void;
+
   'action:undo': (payload: { roomId: RoomId; userId: UserId }) => void;
   'board:clear': (payload: { roomId: RoomId; pageId: PageId }) => void;
   'cursor:update': (payload: { roomId: RoomId; position: Point; pageId: PageId }) => void;
-  
-  // ✨ 新增：页面管理事件
   'page:create': (payload: { roomId: RoomId }) => void;
   'page:delete': (payload: { roomId: RoomId; pageId: PageId }) => void;
 }
@@ -115,12 +107,13 @@ export interface ServerToClientEvents {
   'room:user-left': (payload: { roomId: RoomId; userId: UserId }) => void;
   'room:state-sync': (payload: { roomId: RoomId; state: RoomState; reason: RoomStateSyncReason }) => void;
   'draw:created': (payload: { roomId: RoomId; action: DrawAction }) => void;
+  
+  // ✨ 新增：接收移动广播
+  'draw:moved': (payload: { roomId: RoomId; actionIds: ActionId[]; dx: number; dy: number }) => void;
+
   'action:updatedDeleted': (payload: { roomId: RoomId; actionId: ActionId; isDeleted: boolean }) => void;
   'board:cleared': (payload: { roomId: RoomId; pageId: PageId }) => void;
   'cursor:updated': (payload: { roomId: RoomId; userId: UserId; position: Point; pageId: PageId }) => void;
-  
-  // ✨ 新增：页面列表更新广播
   'page:updated': (payload: { roomId: RoomId; pages: Page[] }) => void;
-  
   error: (payload: ErrorPayload) => void;
 }

@@ -3,7 +3,7 @@ import { useCanvasScaling } from '../../hooks/useCanvasScaling';
 import type { DrawActionType, DrawAction, Point, BrushType, PageId } from '../../shared/protocol';
 import { network } from '../../services/socket';
 import { generateId } from '../../utils/id';
-import { normalizePoint } from '../../utils/math';
+import { normalizePoint, getActionBounds, isIntersecting, getGroupBounds, getDistanceFromAction } from '../../utils/math';
 import { renderAction } from '../../utils/render';
 
 interface CanvasLayerProps {
@@ -41,12 +41,30 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
   
   const startPoint = useRef<Point | null>(null);
   const lastPoint = useRef<Point | null>(null);
+  const startScreenPoint = useRef<Point | null>(null); 
+
   const freehandPoints = useRef<Point[]>([]);
   const lasersRef = useRef<FadingStroke[]>([]);
-
   const actionsRef = useRef<Map<string, DrawAction>>(new Map());
 
-  // --- 1. 核心重绘 ---
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isDraggingSelection, setIsDraggingSelection] = useState(false);
+  const dragOffset = useRef<Point>({ x: 0, y: 0 }); 
+  const selectionBoxStart = useRef<Point | null>(null); 
+
+  const renderActionWithOffset = (ctx: CanvasRenderingContext2D, action: DrawAction, width: number, height: number, offset: Point) => {
+    const movedAction = JSON.parse(JSON.stringify(action)); 
+    if (movedAction.type === 'freehand') {
+      movedAction.points.forEach((p: Point) => { p.x += offset.x; p.y += offset.y; });
+    } else {
+      // @ts-ignore
+      movedAction.start.x += offset.x; movedAction.start.y += offset.y;
+      // @ts-ignore
+      movedAction.end.x += offset.x; movedAction.end.y += offset.y;
+    }
+    renderAction(ctx, movedAction, width, height);
+  };
+
   const redrawAll = () => {
     const ctx = mainCanvasRef.current?.getContext('2d');
     if (!ctx || size.width === 0 || size.height === 0) return;
@@ -59,6 +77,7 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
     allActions.forEach(action => {
       const actionPageId = action.pageId || 'page-1';
       if (actionPageId === pageId && !action.isDeleted) {
+        if (selectedIds.has(action.id) && isDraggingSelection) return; 
         renderAction(ctx, action, size.width, size.height);
       }
     });
@@ -68,25 +87,24 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
     if (actionsRef.current.size > 0 && size.width > 0) {
       redrawAll();
     }
-  }, [size.width, size.height, pageId]);
+  }, [size.width, size.height, pageId, selectedIds, isDraggingSelection]);
 
-  // --- 2. 动画循环 ---
   useEffect(() => {
     let animationFrameId: number;
     const renderLoop = () => {
       const ctx = previewCanvasRef.current?.getContext('2d');
       if (!ctx) return;
 
-      // 1. 重置状态
       ctx.shadowBlur = 0; 
       ctx.shadowColor = 'transparent';
       ctx.globalAlpha = 1.0;
       ctx.globalCompositeOperation = 'source-over';
+      ctx.setLineDash([]); 
       
       ctx.clearRect(0, 0, size.width, size.height);
       const now = Date.now();
 
-      // 2. 渲染已存在的激光 (淡出动画)
+      // A. 激光
       for (let i = lasersRef.current.length - 1; i >= 0; i--) {
         const item = lasersRef.current[i];
         const age = now - item.startTime;
@@ -96,7 +114,6 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
           const alpha = 1 - (age / 2000);
           ctx.save();
           ctx.globalAlpha = alpha;
-          // 激光发光 (历史记录中的)
           ctx.shadowBlur = 10;
           ctx.shadowColor = item.action.color;
           renderAction(ctx, item.action, size.width, size.height);
@@ -104,8 +121,76 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
         }
       }
 
-      // 3. 渲染当前正在画的笔迹 (Preview)
-      if (isDrawing && startPoint.current && lastPoint.current) {
+      // B. 拖拽
+      if (isDraggingSelection && selectedIds.size > 0) {
+        selectedIds.forEach(id => {
+          const action = actionsRef.current.get(id);
+          if (action) {
+            renderActionWithOffset(ctx, action, size.width, size.height, dragOffset.current);
+          }
+        });
+      }
+
+      // C. ✨✨✨ 蓝框渲染 (修复: 增加线宽补偿) ✨✨✨
+      if (!isDraggingSelection && selectedIds.size > 0 && !isDrawing) {
+        const selectedActions: DrawAction[] = [];
+        let maxStroke = 0; 
+
+        selectedIds.forEach(id => {
+          const a = actionsRef.current.get(id);
+          if (a) {
+            selectedActions.push(a);
+            // 找出最粗的线宽
+            if (a.strokeWidth > maxStroke) maxStroke = a.strokeWidth;
+          }
+        });
+        
+        const bounds = getGroupBounds(selectedActions);
+        if (bounds) {
+          ctx.save();
+          ctx.strokeStyle = '#3b82f6'; 
+          ctx.lineWidth = 1;
+          
+          const boxX = bounds.x * size.width;
+          const boxY = bounds.y * size.height;
+          const boxW = bounds.w * size.width;
+          const boxH = bounds.h * size.height;
+          
+          // ✨✨✨ 关键修复：基础10px + 线宽的一半 ✨✨✨
+          // 这样蓝框永远会包在图形外面，解决“太紧/重叠”的问题
+          const padding = 10 + (maxStroke / 2);
+          
+          ctx.strokeRect(boxX - padding, boxY - padding, boxW + padding * 2, boxH + padding * 2);
+          
+          ctx.fillStyle = '#3b82f6';
+          const drawCorner = (x: number, y: number) => {
+            ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
+          };
+          drawCorner(boxX - padding, boxY - padding);
+          drawCorner(boxX + boxW + padding, boxY - padding);
+          drawCorner(boxX + boxW + padding, boxY + boxH + padding);
+          drawCorner(boxX - padding, boxY + boxH + padding);
+
+          ctx.restore();
+        }
+      }
+
+      // D. 框选
+      if (activeTool === 'select' && isDrawing && selectionBoxStart.current && lastPoint.current && !isDraggingSelection) {
+        ctx.save();
+        ctx.strokeStyle = '#3b82f6';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([5, 3]); 
+        ctx.fillStyle = 'rgba(59, 130, 246, 0.1)'; 
+        const w = lastPoint.current.x - selectionBoxStart.current.x;
+        const h = lastPoint.current.y - selectionBoxStart.current.y;
+        ctx.fillRect(selectionBoxStart.current.x, selectionBoxStart.current.y, w, h);
+        ctx.strokeRect(selectionBoxStart.current.x, selectionBoxStart.current.y, w, h);
+        ctx.restore();
+      }
+
+      // E. 绘图预览
+      if (isDrawing && startPoint.current && lastPoint.current && activeTool !== 'select') {
         ctx.beginPath();
         ctx.strokeStyle = color;
         ctx.lineWidth = strokeWidth;
@@ -113,12 +198,10 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
         ctx.lineJoin = 'round';
 
         if (activeTool === 'freehand') {
-          // --- 针对不同笔刷的实时特效 ---
           if (brushType === 'marker') {
             ctx.globalAlpha = 0.5;
             ctx.lineWidth = strokeWidth * 2;
           } else if (brushType === 'laser') {
-            // ✨✨✨ 修复核心：统一为 10，消除视觉跳变 ✨✨✨
             ctx.strokeStyle = color;
             ctx.shadowBlur = 10; 
             ctx.shadowColor = color;
@@ -135,7 +218,6 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
              ctx.stroke();
           }
         } else {
-          // 形状工具 (保持无阴影，确保流畅)
           drawPreviewShape(ctx, activeTool, startPoint.current, lastPoint.current);
         }
       }
@@ -143,7 +225,7 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
     };
     renderLoop();
     return () => cancelAnimationFrame(animationFrameId);
-  }, [size, isDrawing, activeTool, brushType, color, strokeWidth]);
+  }, [size, isDrawing, activeTool, brushType, color, strokeWidth, selectedIds, isDraggingSelection]);
 
   // --- 3. 初始数据 ---
   useEffect(() => {
@@ -161,26 +243,36 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
 
     const handleRemoteDraw = (payload: { roomId: string; action: DrawAction }) => {
       if (payload.roomId !== roomId) return;
-
       if (payload.action.type === 'freehand' && payload.action.brushType === 'laser') {
         const actionPageId = payload.action.pageId || 'page-1';
-        if (actionPageId === pageId) {
-          lasersRef.current.push({ action: payload.action, startTime: Date.now() });
-        }
+        if (actionPageId === pageId) lasersRef.current.push({ action: payload.action, startTime: Date.now() });
         return;
       }
-
       actionsRef.current.set(payload.action.id, payload.action);
-      
       const actionPageId = payload.action.pageId || 'page-1';
-      if (actionPageId === pageId) {
-        const ctx = mainCanvasRef.current?.getContext('2d');
-        if (ctx && size.width > 0) {
-          renderAction(ctx, payload.action, size.width, size.height);
-        }
-      }
+      if (actionPageId === pageId) redrawAll();
     };
     
+    const handleRemoteMove = (payload: { roomId: string; actionIds: string[]; dx: number; dy: number }) => {
+      if (payload.roomId !== roomId) return;
+      let needRedraw = false;
+      payload.actionIds.forEach(id => {
+        const action = actionsRef.current.get(id);
+        if (action) {
+          if (action.type === 'freehand') {
+            action.points.forEach(p => { p.x += payload.dx; p.y += payload.dy; });
+          } else {
+            // @ts-ignore
+            action.start.x += payload.dx; action.start.y += payload.dy;
+            // @ts-ignore
+            action.end.x += payload.dx; action.end.y += payload.dy;
+          }
+          if ((action.pageId || 'page-1') === pageId) needRedraw = true;
+        }
+      });
+      if (needRedraw) redrawAll();
+    };
+
     const handleClear = (payload: { roomId: string; pageId: PageId }) => {
       if (payload.roomId !== roomId) return;
       actionsRef.current.forEach(action => {
@@ -210,6 +302,7 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
     };
 
     socket.on('draw:created', handleRemoteDraw);
+    socket.on('draw:moved', handleRemoteMove);
     socket.on('board:cleared', handleClear);
     socket.on('action:updatedDeleted', handleUpdateDeleted);
     socket.on('room:joined', handleStateSync);
@@ -217,6 +310,7 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
 
     return () => {
       socket.off('draw:created', handleRemoteDraw);
+      socket.off('draw:moved', handleRemoteMove);
       socket.off('board:cleared', handleClear);
       socket.off('action:updatedDeleted', handleUpdateDeleted);
       socket.off('room:joined', handleStateSync);
@@ -302,22 +396,176 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
     setIsDrawing(true);
     const rect = containerRef.current!.getBoundingClientRect();
     const p = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-    startPoint.current = p; lastPoint.current = p;
-    if (activeTool === 'freehand') freehandPoints.current = [p];
+    const np = normalizePoint(p, size.width, size.height);
+    
+    startScreenPoint.current = p; 
+
+    if (activeTool === 'select') {
+      let bestActionId: string | null = null;
+      let minDistance = Infinity;
+      const HIT_TOLERANCE = 3; 
+
+      const allActions = Array.from(actionsRef.current.values());
+      for (let i = allActions.length - 1; i >= 0; i--) {
+        const action = allActions[i];
+        const actionPageId = action.pageId || 'page-1';
+        if (actionPageId === pageId && !action.isDeleted) {
+          const dist = getDistanceFromAction(np, action, size.width, size.height);
+          if (dist <= HIT_TOLERANCE) {
+            if (dist < minDistance) {
+              minDistance = dist;
+              bestActionId = action.id;
+            }
+          }
+        }
+      }
+
+      // 1. 优先判定：是否在蓝框内
+      let insideGroupBounds = false;
+      if (selectedIds.size > 0) {
+        let maxStroke = 0;
+        selectedIds.forEach(id => {
+          const a = actionsRef.current.get(id);
+          if (a && a.strokeWidth > maxStroke) maxStroke = a.strokeWidth;
+        });
+
+        const selectedActions: DrawAction[] = [];
+        selectedIds.forEach(id => {
+          const a = actionsRef.current.get(id);
+          if (a) selectedActions.push(a);
+        });
+        const bounds = getGroupBounds(selectedActions);
+        if (bounds) {
+          // 判定范围：与视觉蓝框一致 (Padding = 10 + 线宽一半)
+          const paddingPx = 10 + (maxStroke / 2);
+          const padX = paddingPx / size.width;
+          const padY = paddingPx / size.height;
+
+          if (np.x >= bounds.x - padX && np.x <= bounds.x + bounds.w + padX &&
+              np.y >= bounds.y - padY && np.y <= bounds.y + bounds.h + padY) {
+            insideGroupBounds = true;
+          }
+        }
+      }
+
+      if (insideGroupBounds) {
+        setIsDraggingSelection(true);
+        startPoint.current = np;
+        lastPoint.current = np;
+        dragOffset.current = { x: 0, y: 0 };
+      } 
+      else if (bestActionId) {
+        setSelectedIds(new Set([bestActionId]));
+        setIsDraggingSelection(true);
+        startPoint.current = np;
+        lastPoint.current = np;
+        dragOffset.current = { x: 0, y: 0 };
+      } 
+      else {
+        setSelectedIds(new Set()); 
+        selectionBoxStart.current = p; 
+        startPoint.current = p; 
+        lastPoint.current = p;
+      }
+    } else {
+      setSelectedIds(new Set());
+      startPoint.current = p; 
+      lastPoint.current = p;
+      if (activeTool === 'freehand') freehandPoints.current = [p];
+    }
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
     if (!isDrawing || !startPoint.current || !lastPoint.current) return;
     const rect = containerRef.current!.getBoundingClientRect();
-    const currentPoint = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-    if (activeTool === 'freehand') freehandPoints.current.push(currentPoint);
-    lastPoint.current = currentPoint;
+    const p = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    const np = normalizePoint(p, size.width, size.height);
+
+    if (activeTool === 'select') {
+      if (isDraggingSelection) {
+        dragOffset.current = {
+          x: np.x - startPoint.current!.x,
+          y: np.y - startPoint.current!.y
+        };
+        lastPoint.current = p; 
+      } else {
+        lastPoint.current = p;
+      }
+    } else {
+      if (activeTool === 'freehand') freehandPoints.current.push(p);
+      lastPoint.current = p;
+    }
   };
 
   const handlePointerUp = (e: React.PointerEvent) => {
     if (!isDrawing) return;
     setIsDrawing(false);
     (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    const rect = containerRef.current!.getBoundingClientRect();
+    const currentScreenPoint = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    
+    if (activeTool === 'select') {
+      if (isDraggingSelection) {
+        if (Math.abs(dragOffset.current.x) > 0 || Math.abs(dragOffset.current.y) > 0) {
+          selectedIds.forEach(id => {
+            const action = actionsRef.current.get(id);
+            if (action) {
+              if (action.type === 'freehand') {
+                action.points.forEach(p => { p.x += dragOffset.current.x; p.y += dragOffset.current.y; });
+              } else {
+                // @ts-ignore
+                action.start.x += dragOffset.current.x; action.start.y += dragOffset.current.y;
+                // @ts-ignore
+                action.end.x += dragOffset.current.x; action.end.y += dragOffset.current.y;
+              }
+            }
+          });
+          
+          network.socket.emit('draw:moved', {
+            roomId,
+            actionIds: Array.from(selectedIds),
+            dx: dragOffset.current.x,
+            dy: dragOffset.current.y
+          });
+
+          dragOffset.current = { x: 0, y: 0 };
+          redrawAll();
+        }
+        setIsDraggingSelection(false);
+      } else {
+        const dragDist = Math.hypot(
+          currentScreenPoint.x - (startScreenPoint.current?.x || 0), 
+          currentScreenPoint.y - (startScreenPoint.current?.y || 0)
+        );
+
+        if (selectionBoxStart.current && dragDist > 5) {
+          const start = normalizePoint(selectionBoxStart.current, size.width, size.height);
+          const end = normalizePoint(lastPoint.current!, size.width, size.height);
+          
+          const selectionRect = {
+            x: Math.min(start.x, end.x),
+            y: Math.min(start.y, end.y),
+            w: Math.abs(end.x - start.x),
+            h: Math.abs(end.y - start.y)
+          };
+
+          const newSelectedIds = new Set<string>();
+          actionsRef.current.forEach(action => {
+            const actionPageId = action.pageId || 'page-1';
+            if (actionPageId === pageId && !action.isDeleted) {
+              const bounds = getActionBounds(action);
+              if (bounds && isIntersecting(selectionRect, bounds)) {
+                newSelectedIds.add(action.id);
+              }
+            }
+          });
+          setSelectedIds(newSelectedIds);
+        }
+        selectionBoxStart.current = null;
+      }
+      return;
+    }
+
     const { width, height } = size; 
     
     const baseAction = {
@@ -352,7 +600,14 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
     startPoint.current = null; lastPoint.current = null; freehandPoints.current = [];
   };
 
-  const getCursorStyle = () => activeTool === 'freehand' && brushType === 'eraser' ? 'cursor-cell' : 'cursor-crosshair';
+  const getCursorStyle = () => {
+    if (activeTool === 'select') {
+      if (isDraggingSelection) return 'cursor-grabbing';
+      if (selectedIds.size > 0) return 'cursor-grab';
+      return 'cursor-default';
+    }
+    return activeTool === 'freehand' && brushType === 'eraser' ? 'cursor-cell' : 'cursor-crosshair';
+  };
 
   return (
     <div ref={containerRef} className={`relative w-full h-full touch-none overflow-hidden ${getCursorStyle()}`}>
