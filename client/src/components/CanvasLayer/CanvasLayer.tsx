@@ -64,7 +64,6 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
     });
   };
 
-  // 尺寸变化时重绘
   useEffect(() => {
     if (actionsRef.current.size > 0 && size.width > 0) {
       redrawAll();
@@ -78,10 +77,16 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
       const ctx = previewCanvasRef.current?.getContext('2d');
       if (!ctx) return;
 
+      // 1. 重置状态
+      ctx.shadowBlur = 0; 
+      ctx.shadowColor = 'transparent';
+      ctx.globalAlpha = 1.0;
+      ctx.globalCompositeOperation = 'source-over';
+      
       ctx.clearRect(0, 0, size.width, size.height);
       const now = Date.now();
 
-      // 激光
+      // 2. 渲染已存在的激光 (淡出动画)
       for (let i = lasersRef.current.length - 1; i >= 0; i--) {
         const item = lasersRef.current[i];
         const age = now - item.startTime;
@@ -91,6 +96,7 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
           const alpha = 1 - (age / 2000);
           ctx.save();
           ctx.globalAlpha = alpha;
+          // 激光发光 (历史记录中的)
           ctx.shadowBlur = 10;
           ctx.shadowColor = item.action.color;
           renderAction(ctx, item.action, size.width, size.height);
@@ -98,20 +104,24 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
         }
       }
 
-      // 预览绘制
+      // 3. 渲染当前正在画的笔迹 (Preview)
       if (isDrawing && startPoint.current && lastPoint.current) {
+        ctx.beginPath();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = strokeWidth;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
         if (activeTool === 'freehand') {
-          ctx.beginPath();
-          ctx.strokeStyle = color;
-          ctx.lineWidth = strokeWidth;
-          ctx.lineCap = 'round';
-          ctx.lineJoin = 'round';
-          
+          // --- 针对不同笔刷的实时特效 ---
           if (brushType === 'marker') {
             ctx.globalAlpha = 0.5;
             ctx.lineWidth = strokeWidth * 2;
           } else if (brushType === 'laser') {
+            // ✨✨✨ 修复核心：统一为 10，消除视觉跳变 ✨✨✨
             ctx.strokeStyle = color;
+            ctx.shadowBlur = 10; 
+            ctx.shadowColor = color;
           } else if (brushType === 'eraser') {
             ctx.strokeStyle = '#ffffff'; 
             ctx.lineWidth = strokeWidth;
@@ -124,12 +134,8 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
              else for(let i=1; i<points.length; i++) ctx.lineTo(points[i].x, points[i].y);
              ctx.stroke();
           }
-          ctx.globalAlpha = 1.0;
-          ctx.shadowBlur = 0;
         } else {
-          ctx.beginPath();
-          ctx.strokeStyle = color;
-          ctx.lineWidth = strokeWidth;
+          // 形状工具 (保持无阴影，确保流畅)
           drawPreviewShape(ctx, activeTool, startPoint.current, lastPoint.current);
         }
       }
@@ -139,7 +145,7 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
     return () => cancelAnimationFrame(animationFrameId);
   }, [size, isDrawing, activeTool, brushType, color, strokeWidth]);
 
-  // --- 3. 初始数据加载 ---
+  // --- 3. 初始数据 ---
   useEffect(() => {
     if (initialState && initialState.actions) {
       actionsRef.current.clear();
@@ -149,7 +155,7 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
     }
   }, [initialState]);
 
-  // --- 4. Socket 监听 ---
+  // --- 4. Socket ---
   useEffect(() => {
     const socket = network.socket;
 
