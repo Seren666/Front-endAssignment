@@ -122,7 +122,7 @@ io.on('connection', (socket) => {
     socket.to(roomId).emit('draw:created', { roomId, action: serverAction });
   });
 
-  // ✨✨✨ 3. 处理移动 (新增逻辑) ✨✨✨
+  // ✨✨✨ 3. 处理移动  ✨✨✨
   socket.on('draw:moved', ({ roomId, actionIds, dx, dy }) => {
     const room = rooms.get(roomId);
     if (!room) return;
@@ -138,7 +138,7 @@ io.on('connection', (socket) => {
             p.y += dy;
           });
         } else {
-          // 形状 (利用 ts-ignore 忽略类型检查，因为我们知道形状一定有 start/end)
+          // 形状 (利用 ts-ignore 忽略类型检查，因为形状一定有 start/end)
           // @ts-ignore
           action.start.x += dx;
           // @ts-ignore
