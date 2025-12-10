@@ -120,7 +120,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           </button>
         </div>
 
-        {/* 3. 形状 (已修复：增加默认显示) */}
+        {/* 3. 形状  */}
         <div className="relative">
           <button 
             className={btnClass(['rect', 'ellipse', 'triangle', 'star', 'arrow', 'diamond', 'pentagon', 'hexagon'].includes(activeTool))}
