@@ -131,7 +131,7 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
         });
       }
 
-      // C. ✨✨✨ 蓝框渲染 (修复: 增加线宽补偿) ✨✨✨
+      // C. ✨✨✨ 蓝框渲染 ✨✨✨
       if (!isDraggingSelection && selectedIds.size > 0 && !isDrawing) {
         const selectedActions: DrawAction[] = [];
         let maxStroke = 0; 
@@ -156,8 +156,7 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
           const boxW = bounds.w * size.width;
           const boxH = bounds.h * size.height;
           
-          // ✨✨✨ 关键修复：基础10px + 线宽的一半 ✨✨✨
-          // 这样蓝框永远会包在图形外面，解决“太紧/重叠”的问题
+          // ✨✨✨ 基础10px + 线宽的一半 ✨✨✨
           const padding = 10 + (maxStroke / 2);
           
           ctx.strokeRect(boxX - padding, boxY - padding, boxW + padding * 2, boxH + padding * 2);
