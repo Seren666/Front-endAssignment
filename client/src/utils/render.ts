@@ -28,7 +28,7 @@ export function renderAction(ctx: CanvasRenderingContext2D, action: DrawAction, 
       ctx.shadowBlur = 10;
       ctx.shadowColor = color;
     } 
-    // ✨✨✨ 真正的橡皮擦逻辑 ✨✨✨
+    // ✨✨✨ 橡皮擦逻辑 ✨✨✨
     else if (action.brushType === 'eraser') {
       // 关键：destination-out 模式会让重叠部分的像素变透明
       ctx.globalCompositeOperation = 'destination-out'; 
@@ -53,7 +53,7 @@ export function renderAction(ctx: CanvasRenderingContext2D, action: DrawAction, 
       ctx.moveTo(toX(p0.x), toY(p0.y));
 
       if (points.length === 1) {
-        // ✨ 关键修复：如果只有一个点，画一个“原地”的线，配合 round lineCap 形成圆点
+        // ✨ 如果只有一个点，画一个“原地”的线，配合 round lineCap 形成圆点
         ctx.lineTo(toX(p0.x), toY(p0.y));
       } else {
         // 多个点，正常连线
@@ -63,7 +63,6 @@ export function renderAction(ctx: CanvasRenderingContext2D, action: DrawAction, 
       }
       break;
     }
-    // ... 其他 case (rect, star 等) 完全保持原样 ...
     case 'rect': {
       const start = toPoint(action.start);
       const end = toPoint(action.end);
