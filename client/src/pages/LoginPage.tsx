@@ -24,7 +24,7 @@ export const LoginPage = () => {
   useEffect(() => {
     const socket = network.socket;
 
-    // ✨✨✨ 修复点 1：接收 data 参数 (里面有后端发来的 state) ✨✨✨
+    // ✨✨✨ 接收 data 参数 (里面有后端发来的 state) ✨✨✨
     const handleJoined = (data: any) => {
       setIsLoading(false);
       
@@ -39,7 +39,7 @@ export const LoginPage = () => {
           password,
           mode: isCreating ? 'create' : 'join',
           joined: true,
-          // ✨✨✨ 修复点 2：把 state 打包带走，传给下一页 ✨✨✨
+          // ✨✨✨ 把 state 打包带走，传给下一页 ✨✨✨
           initialState: data.state 
         } 
       });

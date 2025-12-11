@@ -410,7 +410,7 @@ export const BoardPage = () => {
         </div>
       )}
 
-      {/* 弹窗 B: 清空画布确认 (✨ 已修改：文字双行居中，红色字体) */}
+      {/* 弹窗 B: 清空画布确认 (✨ 文字双行居中，红色字体) */}
       {showClearConfirm && (
         <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/20 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm border border-gray-100 transform scale-100 animate-in zoom-in-95 duration-200">
