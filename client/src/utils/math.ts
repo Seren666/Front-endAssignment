@@ -60,14 +60,13 @@ function getShapeVertices(type: string, start: Point, end: Point): Point[] {
   return vertices;
 }
 
-// --- ✨✨✨ 核心修改：getActionBounds 回归最原始的逻辑 ✨✨✨ ---
-// 不再计算复杂顶点，直接用 start/end 矩形。这绝对包得住。
+// 不再计算复杂顶点，直接用 start/end 矩形
 export const getActionBounds = (action: DrawAction): Rect | null => {
   if (action.isDeleted) return null;
 
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 
-  // A. 自由绘制 (Freehand) - 这个必须遍历点
+  // A. 自由绘制 (Freehand) 
   if (action.type === 'freehand') {
     if (action.points.length === 0) return null;
     action.points.forEach(p => {
@@ -101,8 +100,6 @@ export const getActionBounds = (action: DrawAction): Rect | null => {
     h: maxY - minY
   };
 };
-
-// --- 以下所有逻辑保持不变 (保留了高精度点击和拖拽判定) ---
 
 export const isIntersecting = (r1: Rect, r2: Rect): boolean => {
   return !(
