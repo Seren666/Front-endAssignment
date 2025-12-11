@@ -18,7 +18,7 @@ class NetworkMgr {
       transports: ['websocket'], 
       // 🔴 1. 彻底关闭自动连接
       autoConnect: false, 
-      // 🔴 2. 彻底关闭自动重连 (这就是你要的效果：后端挂了，前端就不试了)
+      // 🔴 2. 彻底关闭自动重连 
       reconnection: false,      
     });
 
@@ -71,7 +71,7 @@ class NetworkMgr {
     this.socket.emit('room:join', { roomId, userName, password, action });
   }
 
-  // ✨✨✨ 新增：离开房间 ✨✨✨
+  // ✨✨✨ 离开房间 ✨✨✨
   public leaveRoom(roomId: string) {
     this.socket.emit('room:leave', { roomId });
   }
