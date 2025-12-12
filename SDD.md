@@ -1,4 +1,4 @@
-# CollaBoard (v1.0 进阶版) 软件设计说明书 (SDD)
+# CollaBoard 软件设计说明书 (SDD)
 
 > 技术栈回顾：
 > 前端：React + TypeScript + Vite + HTML5 Canvas + Tailwind CSS
@@ -11,7 +11,7 @@
 
 ### 1.1 编写目的
 
-本《软件设计说明书》用于指导一个由大学生组成的前端 / 全栈小组实现 **CollaBoard v1.0 进阶版**——一个多人实时协作白板应用。
+本《软件设计说明书》用于指导一个由大学生组成的前端 / 全栈小组实现 **CollaBoard**——一个多人实时协作白板应用。
 
 ### 1.2 读者对象
 
@@ -21,7 +21,7 @@
 
 ### 1.3 项目背景与范围
 
-**核心功能范围（必须实现）：**
+**核心功能范围：**
 
 * 自由绘制（铅笔工具，平滑/折线均可）
 * 矩形 / 圆形绘制（带 “预览-确认” 交互）
@@ -68,7 +68,8 @@
 
 ### 2.2 前端模块划分
 
-#### 2.2.1 Toolbar 模块 (v1.2 重构)
+#### 2.2.1 Toolbar 模块 
+
 * UI 布局：
 
   * 位置：画布左上角的悬浮面板（BoardMix 风格）。
@@ -371,7 +372,7 @@ const sendCursorThrottled = useMemo(
 
 两种实现方式，选一种即可：
 
-1. **简单方式（推荐）：**
+1. **简单方式：**
 
    * 所有最终绘制内容都在同一个 `mainCanvas` 上。
    * 点击“导出”时：
@@ -388,7 +389,7 @@ const sendCursorThrottled = useMemo(
      * `offscreenCanvas.toDataURL()` 后下载。
    * 优点：即使将来有多层 canvas，导出逻辑仍然统一；也可以选择不导出光标。
 
-### 3.7 多画布支持 (Multi-Page) [v1.2 新增]
+### 3.7 多画布支持 (Multi-Page) 
 * 数据结构：所有 DrawAction 和用户 Cursor 均增加 pageId 字段 (默认 'page-1')。
 
 * 渲染隔离：
