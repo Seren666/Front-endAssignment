@@ -80,8 +80,14 @@ class NetworkMgr {
     this.socket.emit('draw:commit', { roomId, action });
   }
 
+<<<<<<< HEAD
   public sendCursor(roomId: string, position: Point, pageId: string) {
     this.socket.emit('cursor:update', { roomId, position, pageId });
+=======
+  /** 更新光标位置 (会节流，但这由调用者控制，这里只负责发) */
+  public sendCursor(roomId: string, position: Point,pageId:string) {
+    this.socket.emit('cursor:update', { roomId, position,pageId});
+>>>>>>> 3b0d89ab143dc3be3d1e14727ebf15e738b4c9a0
   }
 }
 
