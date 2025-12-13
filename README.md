@@ -46,13 +46,13 @@
 ## 核心原理
 
 ### 概述
-整个系统采用 **Client–Server + WebSocket** 模式：
+CollaBoard 采用 React + Vite 构建前端界面，Node.js + Express + Socket.io 作为后端服务，通过 WebSocket 实现多人实时协作绘图。
 
-浏览器 Client ⟷ Socket.io ⟷ Node 服务端
-React + Canvas ←→ Express + Socket.io
+系统整体采用 Client–Server + WebSocket 架构：浏览器端作为 Client 负责用户交互与画面渲染，服务端负责房间管理、状态维护与消息广播。客户端与服务端之间通过 Socket.io 建立长连接，实现低延迟的数据同步。
 
-前端负责获取用户输入，在本地渲染预览并构造绘制动作（DrawAction），在 pointerup 时发送给后端。  
-后端维护房间状态，并广播给房间内所有客户端。客户端根据收到的动作更新本地状态并重绘画布，从而保证每个人看到的内容一致。
+在协作过程中，用户的每一次绘图操作都会被封装为一个统一的数据结构 DrawAction。前端在接收用户输入时先进行本地渲染预览，并在操作结束（如 pointerup）时将对应的 DrawAction 发送至服务端。服务端接收后更新房间状态，并将该操作广播给房间内的所有客户端。
+
+客户端在收到来自服务端的绘制动作后，根据动作内容更新本地状态并重绘画布，从而保证所有参与者在同一房间中看到的画面始终保持一致，实现真正的实时协作体验。
 
 ### 协议与事件定义（Socket）
 
