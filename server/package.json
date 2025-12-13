@@ -1,39 +1,24 @@
 {
   "name": "server",
   "version": "1.0.0",
-<<<<<<< HEAD
   "description": "",
   "main": "index.js",
   "scripts": {
     "dev": "nodemon src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js"
-=======
-  "type":"module",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "dev":"nodemon src/index.ts"
->>>>>>> 3b0d89ab143dc3be3d1e14727ebf15e738b4c9a0
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-<<<<<<< HEAD
   "type": "commonjs",
-=======
->>>>>>> 3b0d89ab143dc3be3d1e14727ebf15e738b4c9a0
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^5.2.1",
     "socket.io": "^4.8.1"
   },
   "devDependencies": {
-<<<<<<< HEAD
     "@types/cors": "^2.8.19",
-=======
->>>>>>> 3b0d89ab143dc3be3d1e14727ebf15e738b4c9a0
     "@types/express": "^5.0.6",
     "@types/node": "^24.10.1",
     "nodemon": "^3.1.11",
