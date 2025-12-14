@@ -269,11 +269,12 @@ io.on('connection', (socket) => {
 });
 
 const PORT = 3000;
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`
   🚀 后端服务已启动!
   ---------------------------
-  Local: http://localhost:${PORT}
+  Local:   http://localhost:${PORT}
+  Network: http://10.136.34.92:${PORT}
   ---------------------------
   `);
 });

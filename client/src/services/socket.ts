@@ -6,7 +6,8 @@ import type {
   Point
 } from '../shared/protocol';
 
-const SERVER_URL = 'http://localhost:3000'; 
+const SERVER_URL = 'http://10.136.34.92:3000';
+; 
 
 class NetworkMgr {
   public socket: Socket<ServerToClientEvents, ClientToServerEvents>;
