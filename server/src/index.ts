@@ -2,6 +2,7 @@ import express from 'express';
 import http from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
+import os from 'os'; // ✨ 新增：引入系统模块
 import { 
   ClientToServerEvents, 
   ServerToClientEvents, 
@@ -269,12 +270,28 @@ io.on('connection', (socket) => {
 });
 
 const PORT = 3000;
+
+// ✨✨✨ 修改点：动态获取本机 IP 并打印 ✨✨✨
 server.listen(PORT, '0.0.0.0', () => {
+  const interfaces = os.networkInterfaces();
+  let localIp = 'localhost';
+  
+  // 智能寻找局域网 IP
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]!) {
+      // 跳过内部地址(127.0.0.1) 和 非IPv4地址
+      if (iface.family === 'IPv4' && !iface.internal) {
+        localIp = iface.address;
+        break;
+      }
+    }
+  }
+
   console.log(`
   🚀 后端服务已启动!
   ---------------------------
-  Local:   http://localhost:${PORT}
-  Network: http://10.136.34.92:${PORT}
+  本机独享: http://localhost:${PORT}
+  多人联机: http://${localIp}:${PORT} 
   ---------------------------
   `);
 });

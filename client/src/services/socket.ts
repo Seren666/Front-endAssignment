@@ -6,8 +6,14 @@ import type {
   Point
 } from '../shared/protocol';
 
-const SERVER_URL = 'http://10.136.34.92:3000';
-; 
+// ✨ 核心修改：动态计算 Socket 地址
+// 1. 如果你在浏览器访问 localhost:5173 -> 它就连 localhost:3000
+// 2. 如果你在浏览器访问 10.136.x.x:5173 -> 它就连 10.136.x.x:3000
+const getSocketUrl = () => {
+  const { hostname } = window.location;
+  // 这里假设后端端口永远是 3000
+  return `http://${hostname}:3000`;
+};
 
 class NetworkMgr {
   public socket: Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -15,7 +21,9 @@ class NetworkMgr {
   private static instance: NetworkMgr;
 
   private constructor() {
-    this.socket = io(SERVER_URL, {
+    // ✨ 在初始化时直接使用动态 URL，这已经足够了
+    // 因为页面不刷新，hostname 是不会变的
+    this.socket = io(getSocketUrl(), {
       transports: ['websocket'], 
       // 🔴 1. 彻底关闭自动连接
       autoConnect: false, 
@@ -36,6 +44,8 @@ class NetworkMgr {
   // ✨ 手动连接
   public connect() {
     if (!this.socket.connected) {
+      // ⚠️ 删除了之前报错的这一行：this.socket.io.uri = ...
+      // 不需要重新设置，初始化时已经定好了
       this.socket.connect();
     }
   }
@@ -54,9 +64,8 @@ class NetworkMgr {
     
     this.socket.on('disconnect', (reason) => {
       console.log('❌ Socket disconnected:', reason);
-      // 如果是因为断网或服务器挂了，这里会收到通知
       if (reason === 'io server disconnect' || reason === 'transport close') {
-        // 可以在这里弹个窗提示用户 "服务器已断开，请刷新页面"
+        // 可以在这里处理断连逻辑
       }
     });
 
@@ -72,7 +81,6 @@ class NetworkMgr {
     this.socket.emit('room:join', { roomId, userName, password, action });
   }
 
-  // ✨✨✨ 离开房间 ✨✨✨
   public leaveRoom(roomId: string) {
     this.socket.emit('room:leave', { roomId });
   }
