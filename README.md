@@ -1,58 +1,78 @@
 # CollaBoard
+
 <div align="center">
 
-**多人实时协作白板**
+**🖌️ 多人实时协作白板**
+
+</div>
+
+<div align="center">
+
+![License](https://img.shields.io/badge/license-MIT-brightgreen)
+![Node.js](https://img.shields.io/badge/Node.js-18.x-brightgreen)
+![Vite](https://img.shields.io/badge/Vite-7.2.6-blue)
+![React](https://img.shields.io/badge/React-18.x-blue)
 
 </div>
 
 支持自由绘制、图形绘制、撤销/重做、多人光标和导出图片等功能。
 
-【在这里放demo视频】
+---
 
 ## 目录
-- [CollaBoard](#Collaboard)
-  - [目录](#目录)
-  - [示例](#示例)
-  - [主要功能](#主要功能)
-  - [核心原理](#核心原理)
-    - [概述](#概述)
-    - [协议与事件定义](#协议与事件定义)
-    - [开发提示](#开发提示)
-  - [快速开始](#快速开始)
-    - [安装依赖](#安装依赖)
-    - [启动开发环境](#启动开发环境)
-  - [项目目录说明](#项目目录说明)
-  
 
+* [CollaBoard](#collaboard)
 
+  * [目录](#目录)
+  * [示例](#示例)
+  * [主要功能](#主要功能)
+  * [核心原理](#核心原理)
 
-## 示例
-以下是CollaBoard的使用演示
-【在这里放使用演示截图或jpg就行】
+    * [概述](#概述)
+    * [协议与事件定义](#协议与事件定义)
+    * [开发提示](#开发提示)
+  * [快速开始](#快速开始)
 
-
-## 主要功能
-
-- 🖍 **自由绘制**：支持多种画笔（铅笔、马克笔、激光笔、橡皮擦）
-- 🔷 **图形绘制**：矩形、圆形、三角形、多边形、箭头等几何图形
-- 🔄 **撤销 / 重做**：基于软删除和 per-user undo 栈
-- 👥 **实时协作**：多人同时在线绘制与光标同步
-- 🏠 **创建房间并加入**：支持通过房间号和密码创建和加入特定房间
-- 📸 **导出 PNG**：将主画布内容导出为图片
-- ⚙️ **高清画布渲染**：支持高 DPI 设备优化 canvas 显示
+    * [安装依赖](#安装依赖)
+    * [启动开发环境](#启动开发环境)
+    * [前后端同时启动](#前后端同时启动)
+  * [访问方式](#访问方式)
+  * [项目目录说明](#项目目录说明)
 
 ---
 
-## 核心原理
+## 示例 🎬
+
+<div align="center" style="border:1px dashed #ccc; padding:16px; margin-bottom:16px;">
+【在这里放使用演示截图或 GIF/JPG】
+</div>
+
+---
+
+## 主要功能 ✨
+
+* 🖍 **自由绘制**：多种画笔（铅笔、马克笔、激光笔、橡皮擦）
+* 🔷 **图形绘制**：矩形、圆形、三角形、多边形、箭头等
+* 🔄 **撤销 / 重做**：软删除 + per-user undo 栈
+* 👥 **实时协作**：多人同时在线绘制与光标同步
+* 🏠 **创建/加入房间**：支持房间号 + 密码
+* 📸 **导出 PNG**：将主画布导出为图片
+* ⚡ **高清画布渲染**：支持高 DPI 优化 canvas
+
+---
+
+## 核心原理 🛠️
 
 ### 概述
-CollaBoard 采用 React + Vite 构建前端界面，Node.js + Express + Socket.io 作为后端服务，通过 WebSocket 实现多人实时协作绘图。
 
-系统整体采用 Client–Server + WebSocket 架构：浏览器端作为 Client 负责用户交互与画面渲染，服务端负责房间管理、状态维护与消息广播。客户端与服务端之间通过 Socket.io 建立长连接，实现低延迟的数据同步。
+CollaBoard 使用 **React + Vite** 构建前端，**Node.js + Express + Socket.io** 构建后端，通过 WebSocket 实现多人协作。
 
-在协作过程中，用户的每一次绘图操作都会被封装为一个统一的数据结构 DrawAction。前端在接收用户输入时先进行本地渲染预览，并在操作结束（如 pointerup）时将对应的 DrawAction 发送至服务端。服务端接收后更新房间状态，并将该操作广播给房间内的所有客户端。
+* 客户端负责：用户交互、画布渲染、光标同步
+* 服务端负责：房间管理、状态维护、消息广播
 
-客户端在收到来自服务端的绘制动作后，根据动作内容更新本地状态并重绘画布，从而保证所有参与者在同一房间中看到的画面始终保持一致，实现真正的实时协作体验。
+每次用户操作都会生成统一数据结构 `DrawAction`，前端先本地渲染，操作结束后发送给服务端，服务端更新房间状态并广播给所有客户端，实现低延迟实时协作。
+
+---
 
 ### 协议与事件定义（Socket）
 
@@ -77,29 +97,31 @@ CollaBoard 采用 React + Vite 构建前端界面，Node.js + Express + Socket.i
 | `cursor:updated`        | `{ roomId, userId, position, pageId }` | 光标更新    |
 | `board:cleared`         | `{ roomId, pageId }`                   | 清屏广播    |
 | `room:state-sync`       | `{ roomId, state }`                    | 全量同步    |
-### 开发提示
 
-* 所有动作使用 **归一化坐标（0~1）**，不同屏幕尺寸保持一致
-* 撤销用软删除（`isDeleted`），减少冲突
-* 光标更新建议 **节流 50ms**
-* canvas 在高 DPI 屏幕下需要处理 `devicePixelRatio` 并用 `ctx.scale(dpr, dpr)` 避免模糊
+---
 
-## 快速开始
+### 开发提示 💡
+
+* 坐标 **归一化 (0~1)**，适配不同屏幕
+* 撤销用 **软删除** (`isDeleted`) 避免冲突
+* 光标更新 **节流 50ms**
+* 高 DPI 设备需用 `ctx.scale(dpr, dpr)` 避免模糊
+
+---
+
+## 快速开始 🚀
 
 ### 安装依赖
 
-在根目录运行：
-
 ```bash
 npm run install:all
-````
+```
 
-或手动安装：
+或手动：
 
 ```bash
 cd client
 npm install
-
 cd ../server
 npm install
 ```
@@ -108,27 +130,40 @@ npm install
 
 ### 启动开发环境
 
-**前端（Client）：**
+**前端（Client）**：
 
 ```bash
 cd client
 npm run dev
 ```
 
-默认：[http://localhost:5173](http://localhost:5173)
+终端显示：
 
-**后端（Server）：**
+```
+➜  Local:   http://localhost:5173/
+➜  Network: http://<你的局域网IP>:5173/
+```
+
+**后端（Server）**：
 
 ```bash
 cd server
 npm run dev
 ```
 
-默认：[http://localhost:3000](http://localhost:3000)
+终端显示：
+
+```
+🚀 后端服务已启动!
+---------------------------
+本机独享: http://localhost:3000
+多人联机: http://<你的局域网IP>:3000 
+---------------------------
+```
 
 ---
 
-### 两端一起跑
+### 前后端同时启动
 
 安装 concurrently：
 
@@ -146,14 +181,22 @@ npm install -D concurrently
 }
 ```
 
-然后运行：
+运行：
 
 ```bash
 npm run start
 ```
 
+---
 
-## 项目目录说明
+## 访问方式 🌐
+
+* **本地访问**：`http://localhost:5173/` (前端) / `http://localhost:3000` (后端)
+* **局域网访问**：终端显示的 `Network` 地址，例如 `http://10.136.85.139:5173/` / `http://10.136.85.139:3000`
+
+---
+
+## 项目目录说明 📁
 
 ```
 /
@@ -161,3 +204,5 @@ npm run start
 ├── server/       # 后端 Express + Socket.io
 ├── README.md
 ```
+
+---
