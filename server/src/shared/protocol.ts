@@ -1,3 +1,4 @@
+//后端typescript协议文件
 export const PROTOCOL_VERSION = '1.5.0';
 
 /* --- 基础类型 --- */

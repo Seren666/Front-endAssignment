@@ -1,3 +1,4 @@
+//左侧的工具栏组件--状态切换器+UI外壳
 import React, { useState } from 'react';
 import classNames from 'classnames';
 import { 
@@ -21,6 +22,7 @@ interface ToolbarProps {
   onClear: () => void;
 }
 
+//它不保存状态，只是call回调函数通知上层组件状态变化
 export const Toolbar: React.FC<ToolbarProps> = ({
   activeTool,
   onToolChange,

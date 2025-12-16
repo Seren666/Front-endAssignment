@@ -1,3 +1,4 @@
+//ESLint 配置文件，为 TS + React + Vite 项目提供完整的 lint 检查，且忽略了构建输出目录。
 import js from '@eslint/js'
 import globals from 'globals'
 import reactHooks from 'eslint-plugin-react-hooks'

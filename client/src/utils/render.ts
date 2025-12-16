@@ -1,3 +1,4 @@
+//Canvas 渲染模块，负责把之前定义的 DrawAction 画到画布上，是把白板里的每个动作从数据变成可见图形的核心工具
 import type{ DrawAction, Point } from '../shared/protocol';
 
 /**

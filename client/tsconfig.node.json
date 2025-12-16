@@ -1,3 +1,4 @@
+//专门针对 Vite 配置文件的 TypeScript 检查设置，不会输出 JS，只做类型校验和 lint 风格检查
 {
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",

@@ -1,3 +1,4 @@
+/*Tailwind CSS 的全局样式，让应用铺满整个屏幕并配合 Tailwind*/
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

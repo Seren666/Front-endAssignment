@@ -1,3 +1,5 @@
+// 协作白板后端：管理房间/用户/页面，处理绘制、撤销、清屏、移动图形和光标同步，内存存储数据并打印操作日志
+
 import express from 'express';
 import http from 'http';
 import { Server } from 'socket.io';

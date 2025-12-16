@@ -1,3 +1,4 @@
+//整个白板--画画、选中、拖拽、预览、同步、动画
 import React, { useRef, useState, useMemo, useEffect } from 'react';
 import { useCanvasScaling } from '../../hooks/useCanvasScaling';
 import type { DrawActionType, DrawAction, Point, BrushType, PageId } from '../../shared/protocol';
@@ -6,6 +7,7 @@ import { generateId } from '../../utils/id';
 import { normalizePoint, getActionBounds, isIntersecting, getGroupBounds, getDistanceFromAction } from '../../utils/math';
 import { renderAction } from '../../utils/render';
 
+//这一层画布需要什么状态：房间、页码、当前工具、画笔类型、颜色、线宽，还有进房间时的初始状态。
 interface CanvasLayerProps {
   roomId: string;
   pageId: PageId;
@@ -30,21 +32,33 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
   strokeWidth,
   initialState
 }) => {
+  /*
+  容器用来算尺寸。
+mainCanvas 是“已经落笔的历史内容”。
+previewCanvas 是“还没确认的内容”：正在画、正在拖、选中框、激光残影。
+
+两张 canvas 叠着是为了避免频繁重绘全部内容
+  */
   const containerRef = useRef<HTMLDivElement>(null);
   const mainCanvasRef = useRef<HTMLCanvasElement>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
 
   const canvasRefList = useMemo(() => [mainCanvasRef, previewCanvasRef], []);
   const size = useCanvasScaling(containerRef, canvasRefList);
-
+//isDrawing--一个全局的“指针是否按下”的状态。不区分鼠标还是触控，全走 Pointer Events。
   const [isDrawing, setIsDrawing] = useState(false);
   
+/*startPoint：一次操作的起点（可能是图形起点，也可能是拖拽起点）
+lastPoint：实时更新的当前位置
+startScreenPoint：专门用来区分“点击”和“框选拖动”的屏幕坐标*/ 
   const startPoint = useRef<Point | null>(null);
   const lastPoint = useRef<Point | null>(null);
   const startScreenPoint = useRef<Point | null>(null); 
 
+//自由绘制时，临时存下所有采样点。松手那一刻才会一次性变成 action。
   const freehandPoints = useRef<Point[]>([]);
   const lasersRef = useRef<FadingStroke[]>([]);
+//actionsRef--白板真正的数据核心。Map 存所有 DrawAction，包含你自己和别人的。不用 state 是为了避免每画一下就触发 React 重渲染。
   const actionsRef = useRef<Map<string, DrawAction>>(new Map());
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -89,6 +103,14 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
     }
   }, [size.width, size.height, pageId, selectedIds, isDraggingSelection]);
 
+  /*整份代码最重要的一段。
+每一帧负责画 previewCanvas，包括：
+激光的渐隐动画
+拖拽中的临时图形
+蓝色选中框
+框选矩形
+正在画的线 / 图形预览
+*/
   useEffect(() => {
     let animationFrameId: number;
     const renderLoop = () => {
@@ -227,6 +249,7 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
   }, [size, isDrawing, activeTool, brushType, color, strokeWidth, selectedIds, isDraggingSelection]);
 
   // --- 3. 初始数据 ---
+  //进房间 / 刷新时，把服务器下发的 actions 塞进 actionsRef，然后全量重绘。
   useEffect(() => {
     if (initialState && initialState.actions) {
       actionsRef.current.clear();
@@ -237,6 +260,15 @@ export const CanvasLayer: React.FC<CanvasLayerProps> = ({
   }, [initialState]);
 
   // --- 4. Socket ---
+  /*
+  “别人动了我怎么办”
+draw:created → 别人新画
+draw:moved → 别人拖拽
+board:cleared → 清空某一页
+action:updatedDeleted → 撤销 / 删除
+room:joined / state-sync → 全量状态同步
+每个事件最后都是：改 actionsRef → redrawAll
+  */
   useEffect(() => {
     const socket = network.socket;
 

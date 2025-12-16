@@ -26,3 +26,4 @@
   },
   "include": ["src"]
 }
+// TypeScript 配置文件，定义了编译选项和包含的源文件路径，适用于 React + Vite 项目

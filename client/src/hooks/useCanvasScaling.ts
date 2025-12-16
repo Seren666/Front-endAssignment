@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 
-/**
- * 自动处理 Canvas 的高分屏缩放 (DPR) 和 窗口大小变化
- */
+//自动处理 Canvas 的高分屏缩放 (DPR) 和 窗口大小变化
+//让 canvas 在任何屏幕、任何缩放下都不糊，而且尺寸永远跟容器走
 export function useCanvasScaling(
   containerRef: React.RefObject<HTMLDivElement | null>,
   canvasRefs: React.RefObject<HTMLCanvasElement | null>[]

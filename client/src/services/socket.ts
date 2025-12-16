@@ -1,3 +1,4 @@
+//封装好的socket网络管理器，负责白板和服务器的所有实时通信
 import { io, Socket } from 'socket.io-client';
 import type { 
   ServerToClientEvents, 

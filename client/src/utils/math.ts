@@ -1,3 +1,5 @@
+//绘图/白板的几何计算工具模块，核心是计算形状边界、碰撞检测和距离，方便在白板里实现选中、拖拽、点击检测等功能。
+//帮白板判断点击、选中和拖动是否命中某个绘图元素的核心逻辑
 import type{ Point, DrawAction } from '../shared/protocol';
 
 export const normalizePoint = (p: Point, width: number, height: number): Point => {

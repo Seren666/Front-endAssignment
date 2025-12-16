@@ -1,3 +1,4 @@
+//React 应用入口，把 前端路由和实时连接 整合到一起，让白板页面能在不同路由下安全运行
 import { useState, useEffect, useRef } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { LoginPage } from './pages/LoginPage';

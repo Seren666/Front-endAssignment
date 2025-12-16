@@ -9,3 +9,4 @@ export default {
   },
   plugins: [],
 }
+//Tailwind CSS 的配置文件，指定了内容扫描路径和主题扩展选项
