@@ -1,73 +1,208 @@
-# React + TypeScript + Vite
+# CollaBoard
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+<div align="center">
 
-Currently, two official plugins are available:
+**🖌️ 多人实时协作白板**
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+</div>
 
-## React Compiler
+<div align="center">
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+![License](https://img.shields.io/badge/license-MIT-brightgreen)
+![Node.js](https://img.shields.io/badge/Node.js-18.x-brightgreen)
+![Vite](https://img.shields.io/badge/Vite-7.2.6-blue)
+![React](https://img.shields.io/badge/React-18.x-blue)
 
-## Expanding the ESLint configuration
+</div>
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+支持自由绘制、图形绘制、撤销/重做、多人光标和导出图片等功能。
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+---
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+## 目录
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+* [CollaBoard](#collaboard)
+
+  * [目录](#目录)
+  * [示例](#示例)
+  * [主要功能](#主要功能)
+  * [核心原理](#核心原理)
+
+    * [概述](#概述)
+    * [协议与事件定义](#协议与事件定义)
+    * [开发提示](#开发提示)
+  * [快速开始](#快速开始)
+
+    * [安装依赖](#安装依赖)
+    * [启动开发环境](#启动开发环境)
+    * [前后端同时启动](#前后端同时启动)
+  * [访问方式](#访问方式)
+  * [项目目录说明](#项目目录说明)
+
+---
+
+## 示例 🎬
+
+<div align="center" style="border:1px dashed #ccc; padding:16px; margin-bottom:16px;">
+【在这里放使用演示截图或 GIF/JPG】
+</div>
+
+---
+
+## 主要功能 ✨
+
+* 🖍 **自由绘制**：多种画笔（铅笔、马克笔、激光笔、橡皮擦）
+* 🔷 **图形绘制**：矩形、圆形、三角形、多边形、箭头等
+* 🔄 **撤销 / 重做**：软删除 + per-user undo 栈
+* 👥 **实时协作**：多人同时在线绘制与光标同步
+* 🏠 **创建/加入房间**：支持房间号 + 密码
+* 📸 **导出 PNG**：将主画布导出为图片
+* ⚡ **高清画布渲染**：支持高 DPI 优化 canvas
+
+---
+
+## 核心原理 🛠️
+
+### 概述
+
+CollaBoard 使用 **React + Vite** 构建前端，**Node.js + Express + Socket.io** 构建后端，通过 WebSocket 实现多人协作。
+
+* 客户端负责：用户交互、画布渲染、光标同步
+* 服务端负责：房间管理、状态维护、消息广播
+
+每次用户操作都会生成统一数据结构 `DrawAction`，前端先本地渲染，操作结束后发送给服务端，服务端更新房间状态并广播给所有客户端，实现低延迟实时协作。
+
+---
+
+### 协议与事件定义（Socket）
+
+#### 📨 客户端 → 服务端
+
+| 事件名             | Payload                        | 说明     |
+| --------------- | ------------------------------ | ------ |
+| `room:join`     | `{ roomId, userName }`         | 加入房间   |
+| `draw:commit`   | `{ roomId, action }`           | 提交绘制动作 |
+| `action:undo`   | `{ roomId, userId }`           | 撤销操作   |
+| `action:redo`   | `{ roomId, userId }`           | 重做操作   |
+| `cursor:update` | `{ roomId, position, pageId }` | 光标更新   |
+| `board:clear`   | `{ roomId, pageId }`           | 清空画布   |
+
+#### 📤 服务端 → 客户端
+
+| 事件名                     | Payload                                | 说明      |
+| ----------------------- | -------------------------------------- | ------- |
+| `room:joined`           | `{ roomId, self, state }`              | 加入成功    |
+| `draw:created`          | `{ roomId, action }`                   | 广播新动作   |
+| `action:updatedDeleted` | `{ roomId, actionId, isDeleted }`      | 撤销/恢复更新 |
+| `cursor:updated`        | `{ roomId, userId, position, pageId }` | 光标更新    |
+| `board:cleared`         | `{ roomId, pageId }`                   | 清屏广播    |
+| `room:state-sync`       | `{ roomId, state }`                    | 全量同步    |
+
+---
+
+### 开发提示 💡
+
+* 坐标 **归一化 (0~1)**，适配不同屏幕
+* 撤销用 **软删除** (`isDeleted`) 避免冲突
+* 光标更新 **节流 50ms**
+* 高 DPI 设备需用 `ctx.scale(dpr, dpr)` 避免模糊
+
+---
+
+## 快速开始 🚀
+
+### 安装依赖
+
+```bash
+npm run install:all
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+或手动：
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+cd client
+npm install
+cd ../server
+npm install
 ```
+
+---
+
+### 启动开发环境
+
+**前端（Client）**：
+
+```bash
+cd client
+npm run dev
+```
+
+终端显示：
+
+```
+➜  Local:   http://localhost:5173/
+➜  Network: http://<你的局域网IP>:5173/
+```
+
+**后端（Server）**：
+
+```bash
+cd server
+npm run dev
+```
+
+终端显示：
+
+```
+🚀 后端服务已启动!
+---------------------------
+本机独享: http://localhost:3000
+多人联机: http://<你的局域网IP>:3000 
+---------------------------
+```
+
+---
+
+### 前后端同时启动
+
+安装 concurrently：
+
+```bash
+npm install -D concurrently
+```
+
+根目录 `package.json` 添加：
+
+```json
+"scripts": {
+  "dev:client": "cd client && npm run dev",
+  "dev:server": "cd server && npm run dev",
+  "start": "concurrently \"npm:dev:server\" \"npm:dev:client\""
+}
+```
+
+运行：
+
+```bash
+npm run start
+```
+
+---
+
+## 访问方式 🌐
+
+* **本地访问**：`http://localhost:5173/` (前端) / `http://localhost:3000` (后端)
+* **局域网访问**：终端显示的 `Network` 地址，例如 `http://10.136.85.139:5173/` / `http://10.136.85.139:3000`
+
+---
+
+## 项目目录说明 📁
+
+```
+/
+├── client/       # 前端 React + Vite
+├── server/       # 后端 Express + Socket.io
+├── README.md
+```
+
+---
