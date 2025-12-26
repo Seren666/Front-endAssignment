@@ -21,8 +21,6 @@
 
 ## 目录
 
-## 目录
-
 - [CollaBoard](#collaboard)
 
   - [目录](#目录)
