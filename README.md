@@ -15,41 +15,45 @@
 
 </div>
 
-支持自由绘制、图形绘制、撤销/重做、多人光标和导出图片等功能。
+支持**自由绘制、图形绘制、撤销/重做、多人光标**和**导出图片**等功能。
 
 ---
 
 ## 目录
 
-- [CollaBoard](#collaboard)
+- [CollaBoard](#Collaboard)
 
   - [目录](#目录)
-  - [示例](#示例)
-  - [主要功能](#主要功能)
-  - [核心原理](#核心原理)
+  - [🚀主要功能](#🚀主要功能)
+  - [🧠核心原理](#🧠核心原理)
 
     - [概述](#概述)
-    - [协议与事件定义](#协议与事件定义)
-    - [开发提示](#开发提示)
-  - [快速开始](#快速开始)
+    - [协议与事件定义](#协议与事件定义（Socket）)
+    - [💡开发提示](#💡开发提示)
+  - [⚡快速开始](#⚡快速开始)
 
     - [安装依赖](#安装依赖)
-    - [启动开发环境](#启动开发环境)
+    - [▶️启动开发环境](#▶️启动开发环境)
     - [前后端同时启动](#前后端同时启动)
   - [访问方式](#访问方式)
   - [项目目录说明](#项目目录说明)
 
+  ---
+
+## 🔥项目亮点
+
+CollaBoard 面向的是典型的**多人并发协作场景**，项目核心不在于绘图功能本身，而在于如何**在高频交互下保证状态一致、延迟可控与操作可回溯**。
+
+系统将所有用户行为统一建模为不可变的 **DrawAction 事件流**，前端采用 **Optimistic Rendering**（先本地渲染，后服务端确认），显著降低交互延迟；服务端维护房间级状态并进行**有序广播**，保证所有客户端最终一致。
+
+在协作冲突处理上，引入**基于软删除的事件级撤销机制，实现每用户独立的 Undo / Redo 栈**，同时避免传统回滚在多人场景下引发的状态错乱问题。
+
+此外，项目通过**坐标归一化**与**高 DPI Canvas 渲染适配**，使绘制结果在**不同设备、分辨率与窗口尺寸下**保持一致性，体现了对真实使用场景与系统可扩展性的深入考虑。
+
+CollaBoard 本质上是一个**事件驱动的实时协作系统原型**，而不仅是一个功能叠加的白板应用。
+
 ---
-
-## 示例 🎬
-
-<div align="center" style="border:1px dashed #ccc; padding:16px; margin-bottom:16px;">
-【在这里放使用演示截图或 GIF/JPG】
-</div>
-
----
-
-## 主要功能 ✨
+## 🚀主要功能
 
 * 🖍 **自由绘制**：多种画笔（铅笔、马克笔、激光笔、橡皮擦）
 * 🔷 **图形绘制**：矩形、圆形、三角形、多边形、箭头等
@@ -61,14 +65,27 @@
 
 ---
 
-## 核心原理 🛠️
+## 🧠核心原理
 
 ### 概述
 
 CollaBoard 使用 **React + Vite** 构建前端，**Node.js + Express + Socket.io** 构建后端，通过 WebSocket 实现多人协作。
 
-* 客户端负责：用户交互、画布渲染、光标同步
-* 服务端负责：房间管理、状态维护、消息广播
+#### 🎨客户端
+
+处理用户交互
+
+Canvas 渲染
+
+光标与本地状态管理
+
+#### 🧠服务端
+
+房间管理
+
+状态维护
+
+操作广播与同步
 
 每次用户操作都会生成统一数据结构 `DrawAction`，前端先本地渲染，操作结束后发送给服务端，服务端更新房间状态并广播给所有客户端，实现低延迟实时协作。
 
@@ -100,16 +117,19 @@ CollaBoard 使用 **React + Vite** 构建前端，**Node.js + Express + Socket.i
 
 ---
 
-### 开发提示 💡
+### 💡开发提示
 
-* 坐标 **归一化 (0~1)**，适配不同屏幕
-* 撤销用 **软删除** (`isDeleted`) 避免冲突
-* 光标更新 **节流 50ms**
-* 高 DPI 设备需用 `ctx.scale(dpr, dpr)` 避免模糊
+📐 坐标统一 归一化 (0 ~ 1)，自动适配不同屏幕
+
+🧹 撤销使用 软删除 (isDeleted)，避免并发冲突
+
+🐢 光标更新做 50ms 节流，性能更稳
+
+🔍 高 DPI 设备需 ctx.scale(dpr, dpr)
 
 ---
 
-## 快速开始 🚀
+## ⚡快速开始
 
 ### 安装依赖
 
@@ -128,7 +148,7 @@ npm install
 
 ---
 
-### 启动开发环境
+### ▶️启动开发环境
 
 **前端（Client）**：
 
@@ -189,20 +209,60 @@ npm run start
 
 ---
 
-## 访问方式 🌐
+## 访问方式
 
 * **本地访问**：`http://localhost:5173/` (前端) / `http://localhost:3000` (后端)
 * **局域网访问**：终端显示的 `Network` 地址，例如 `http://10.136.85.139:5173/` / `http://10.136.85.139:3000`
 
 ---
 
-## 项目目录说明 📁
+## 项目目录说明
 
 ```
 /
-├── client/       # 前端 React + Vite
-├── server/       # 后端 Express + Socket.io
-├── README.md
-```
+├── client/                  # 前端 React + Vite
+   |—— public/               # 一些图片资源
+   |—— src        
+       |—— assets 
+       |—— components     
+           |—— CanvasLayer       # 完成白板页面的画画、选中、拖拽、预览、同步、动画操作
+           |—— Toolbar           # 左侧工具栏组件的状态切换器作用及其UI
+       |—— hooks             
+           |—— useCanvasScaling  # 自动处理 Canvas 的 DPR 和窗口大小变化
+       |—— pages
+           |—— BoardPage         # 白板页面级别的控制器
+           |—— LoginPage         # 登陆页面控制器   
+       |—— services
+           |—— socket            # socket网络管理器，负责白板和服务器的所有实时通信
+       |—— shared
+           |—— protocol          # typescript协议文件，整个白板前后端通信的数据类型和事件定义
+       |—— utils
+           |—— id                # 前端生成唯一 ID 的工具函数
+           |—— math              # 绘图的几何计算工具
+           |—— render            # Canvas渲染模块
+       |—— App.css               # 样式渲染
+       |—— App.tsx               # React应用入口，整合前端路由和实时连接
+       |—— index.css             # Tailwind CSS的全局样式
+       |——main.tsx               # React 18 入口文件
+    |—— eslint.config.js         # 为TS+React+Vite提供完整lint检查
+    |—— index.html               # 前端应用HTML模板
+    |—— package
+    |——postcss.config.js         # PostCSS配置文件
+    |—— tailwind.config.js
+    |—— tsconfig.app.json        # TypeScript配置文件
+    |—— tsconfig.json            # TypeScript 的主配置文件，引用了应用和 Node.js 相关的配置文件
+    |—— tsconfig.node.json       # 专门针对 Vite 配置文件的 TypeScript 检查设置
+    |—— vite.config.ts           # Vite配置文件
+|—— server/                      # 后端 Express + Socket.io
+    |—— src
+        |—— shared                   
+            |—— protocol         # 后端typescript协议文件
+        |—— index                # 协作白板后端
+        |—— package-lock
+        |—— package
+        |—— tsconfig 
+|—— gitignore                
+|—— README.md
+|—— SDD.md                        # 软件设计说明书
 
 ---
